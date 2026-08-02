@@ -1,0 +1,53 @@
+flowchart TD
+
+    %% ---------- INPUT ----------
+    U["User<br/>taste profile: genre, mood, target_energy"]
+    CLI["CLI Runner<br/>src/main.py"]
+    U --> CLI
+
+    %% ---------- RETRIEVAL (the R in RAG) ----------
+    subgraph RET["Retriever"]
+        KB[("Music Knowledge Base<br/>data/songs.csv")]
+        LOAD["load_songs()<br/>parse + type-cast catalog"]
+        SCORE["score_song()<br/>genre +1.0 · mood +1.0 · energy x2.0"]
+        RANK["recommend_songs()<br/>sort by score, cut to top-k"]
+        KB --> LOAD --> SCORE --> RANK
+    end
+    CLI -- "query: user_prefs, k" --> LOAD
+
+    %% ---------- AUGMENTED GENERATION ----------
+    subgraph GEN["Explanation Agent"]
+        CTX["Retrieved context<br/>(song, score, reasons)"]
+        EXPL["explain_recommendation()<br/>grounds every claim in retrieved fields"]
+        CTX --> EXPL
+    end
+    RANK -- "top-k + evidence" --> CTX
+
+    %% ---------- GUARDRAILS ----------
+    GUARD["Guardrails & Logging<br/>missing/malformed rows · empty-result fallback<br/>'No strong matches, but worth a listen'"]
+    LOAD -.-> GUARD
+    RANK -.-> GUARD
+    EXPL -.-> GUARD
+
+    %% ---------- OUTPUT ----------
+    OUT["Ranked recommendations<br/>+ grounded 'why it matches'<br/>print_recommendations()"]
+    EXPL --> OUT
+    OUT --> U
+
+    %% ---------- VERIFICATION ----------
+    subgraph EVAL["Evaluation & Human Check"]
+        TEST["Automated Tester<br/>tests/test_recommender.py<br/>scoring · ranking · edge cases"]
+        HUMAN["Human Review<br/>multi-profile demo runs:<br/>are picks + reasons sensible?"]
+    end
+    OUT --> TEST
+    OUT --> HUMAN
+    TEST -- "regressions" --> SCORE
+    HUMAN -- "re-tune weights / wording" --> SCORE
+
+    %% ---------- STYLES ----------
+    classDef store fill:#e8eaf6,stroke:#3f51b5
+    classDef check fill:#e8f5e9,stroke:#2e7d32
+    classDef guard fill:#fff8e1,stroke:#f9a825
+    class KB store
+    class TEST,HUMAN check
+    class GUARD guard
