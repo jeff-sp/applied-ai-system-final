@@ -1,19 +1,204 @@
 id,title,artist,genre,mood,energy,tempo_bpm,valence,danceability,acousticness
-1,Sunrise City,Neon Echo,pop,happy,0.82,118,0.84,0.79,0.18
-2,Midnight Coding,LoRoom,lofi,chill,0.42,78,0.56,0.62,0.71
-3,Storm Runner,Voltline,rock,intense,0.91,152,0.48,0.66,0.10
-4,Library Rain,Paper Lanterns,lofi,chill,0.35,72,0.60,0.58,0.86
-5,Gym Hero,Max Pulse,pop,intense,0.93,132,0.77,0.88,0.05
-6,Spacewalk Thoughts,Orbit Bloom,ambient,chill,0.28,60,0.65,0.41,0.92
-7,Coffee Shop Stories,Slow Stereo,jazz,relaxed,0.37,90,0.71,0.54,0.89
-8,Night Drive Loop,Neon Echo,synthwave,moody,0.75,110,0.49,0.73,0.22
-9,Focus Flow,LoRoom,lofi,focused,0.40,80,0.59,0.60,0.78
-10,Rooftop Lights,Indigo Parade,indie pop,happy,0.76,124,0.81,0.82,0.35
-11,Island Time,Palm Drift,reggae,relaxed,0.55,92,0.83,0.74,0.40
-12,Concrete Verses,MC Grayline,hip hop,confident,0.72,96,0.61,0.85,0.12
-13,Autumn Elegy,Cellophane Quartet,classical,melancholy,0.30,66,0.28,0.22,0.95
-14,Warehouse Pulse,Kilobyte,edm,energetic,0.95,128,0.70,0.91,0.03
-15,Dust Road Home,Wren Halloway,country,nostalgic,0.48,100,0.55,0.60,0.68
-16,Velvet Midnight,Sable Rose,r&b,romantic,0.52,84,0.66,0.71,0.44
-17,Iron Requiem,Ashen Vow,metal,angry,0.97,168,0.25,0.55,0.04
-18,Paper Boats,Marlowe Fields,folk,hopeful,0.44,108,0.72,0.51,0.82
+1,Can't Stop the Feeling!,Justin Timberlake,pop,happy,0.82,118,0.84,0.79,0.18
+2,Aruarian Dance,Nujabes,lofi,chill,0.42,78,0.56,0.62,0.71
+3,Mr. Brightside,The Killers,rock,intense,0.91,152,0.48,0.66,0.10
+4,Staying There,L'Indécis,lofi,chill,0.35,72,0.60,0.58,0.86
+5,Physical,Dua Lipa,pop,intense,0.93,132,0.77,0.88,0.05
+6,Music for Airports 1/1,Brian Eno,ambient,chill,0.28,60,0.65,0.41,0.92
+7,Waltz for Debby,Bill Evans Trio,jazz,relaxed,0.37,90,0.71,0.54,0.89
+8,Nightcall,Kavinsky,synthwave,moody,0.75,110,0.49,0.73,0.22
+9,Feather,Nujabes,lofi,focused,0.40,80,0.59,0.60,0.78
+10,Lisztomania,Phoenix,indie pop,happy,0.76,124,0.81,0.82,0.35
+11,Three Little Birds,Bob Marley & The Wailers,reggae,relaxed,0.55,92,0.83,0.74,0.40
+12,Juicy,The Notorious B.I.G.,hip hop,confident,0.72,96,0.61,0.85,0.12
+13,"Elegy for Strings, Op. 58",Edward Elgar,classical,melancholy,0.3,66,0.28,0.22,0.95
+14,One More Time,Daft Punk,edm,energetic,0.95,128,0.70,0.91,0.03
+15,"Take Me Home, Country Roads",John Denver,country,nostalgic,0.48,100,0.55,0.60,0.68
+16,Let's Get It On,Marvin Gaye,r&b,romantic,0.52,84,0.66,0.71,0.44
+17,Master of Puppets,Metallica,metal,angry,0.97,168,0.25,0.55,0.04
+18,Ho Hey,The Lumineers,folk,hopeful,0.44,108,0.72,0.51,0.82
+19,Four,"Michael Mayo, Norrbotten Big Band, Calle Rasmusson",jazz,energetic,0.72,168,0.63,0.468,0.30
+20,Four,Miles Davis,jazz,intense,0.60,172,0.47,0.26,0.88
+21,Ain't Misbehavin',"Ella Fitzgerald, Count Basie",jazz,happy,0.45,76,0.84,0.63,0.91
+22,Mayonaka no Door~stay with me,Miki Matsubara,city pop,nostalgic,0.7,108,0.82,0.8,0.34
+23,Plastic Love,Mariya Takeuchi,city pop,nostalgic,0.74,103,0.79,0.77,0.27
+24,Days Of Wine And Roses - Instrumental,Dexter Gordon,jazz,relaxed,0.42,132,0.42,0.24,0.86
+25,Travels,"Charlie Haden, Michael Brecker",jazz,melancholy,0.25,72,0.19,0.51,0.94
+26,Scrapple From The Apple,Charlie Parker,jazz,energetic,0.68,200,0.66,0.28,0.89
+27,Sunday Morning,Maroon 5,pop,relaxed,0.55,88,0.83,0.79,0.34
+28,Where Do I Go,Drunken Tiger,hip hop,moody,0.62,90,0.32,0.75,0.09
+29,Flight of the Foo Birds,Count Basie,jazz,confident,0.55,126,0.71,0.36,0.83
+30,After You've Gone,Ella Fitzgerald,jazz,happy,0.66,180,0.88,0.56,0.84
+31,May the Circle Be Unbroken,"Tuba Fats, Peter Nissens New Orleans Jazzband",jazz,hopeful,0.48,92,0.69,0.48,0.93
+32,After You've Gone,"Tuba Fats, Peter Nissens New Orleans Jazzband",jazz,happy,0.70,200,0.87,0.57,0.92
+33,Bill Bailey,Danny Barker,jazz,happy,0.52,120,0.85,0.54,0.94
+34,"Yes Sir, That's My Baby",Milton Batiste,jazz,happy,0.60,132,0.86,0.58,0.91
+35,They All Asked for You,"Milton Batiste's Zoo Band, Milton Batiste",jazz,happy,0.66,104,0.90,0.73,0.79
+36,727 Ursaline Street,"The Jazz Crusade Revival Band, Paul Boehmke",jazz,relaxed,0.50,110,0.68,0.30,0.91
+37,South Rampart Street Parade,Leroy Jones,jazz,energetic,0.74,152,0.86,0.40,0.81
+38,Bluebird,Leroy Jones,jazz,chill,0.45,140,0.49,0.26,0.88
+39,Brazilian National Anthem,"Terre Roche, Garry Dial",folk,hopeful,0.38,96,0.62,0.86,0.92
+40,Creep,"Scott Bradlee's Postmodern Jukebox, Haley Reinhart",jazz,melancholy,0.42,177,0.21,0.42,0.77
+41,Dean Town,Vulfpeck,funk,confident,0.62,111,0.76,0.78,0.07
+42,Milkshake,Ghost-Note,funk,confident,0.72,100,0.72,0.74,0.04
+43,Best Part,"Daniel Caesar, H.E.R.",r&b,romantic,0.40,92,0.66,0.61,0.47
+44,On My Radio,The Selecter,ska,energetic,0.80,150,0.84,0.76,0.05
+45,Creep,Karen Souza,jazz,moody,0.30,104,0.18,0.43,0.81
+46,LOST IN PARADISE,"ALI, AKLO",hip hop,confident,0.78,122,0.76,0.79,0.05
+47,Nomu,Good Kid,indie rock,hopeful,0.68,93,0.73,0.59,0.11
+48,Blue Bossa - Remastered,Joe Henderson,jazz,chill,0.48,82,0.46,0.28,0.83
+49,Confirmation,Charlie Parker,jazz,energetic,0.66,172,0.68,0.26,0.87
+50,Impressions,Hiromi,jazz,intense,0.85,200,0.51,0.18,0.42
+51,All The Things You Are,"Ella Fitzgerald, Nelson Riddle",jazz,romantic,0.40,120,0.57,0.44,0.89
+52,Ace of Aces,The Fearless Flyers,funk,intense,0.78,130,0.63,0.66,0.05
+53,Levitating,Dua Lipa,pop,happy,0.78,120,0.86,0.81,0.14
+54,Adore You,Harry Styles,pop,romantic,0.58,100,0.68,0.72,0.28
+55,Higher Love,"Kygo, Whitney Houston",pop,hopeful,0.72,112,0.79,0.76,0.22
+56,Africa,Toto,pop,nostalgic,0.64,108,0.62,0.74,0.31
+57,Run the World (Girls),Beyoncé,pop,confident,0.85,126,0.74,0.87,0.09
+58,Don't Stop the Music,Rihanna,pop,energetic,0.90,128,0.81,0.90,0.06
+59,Somebody Else,The 1975,pop,moody,0.61,104,0.44,0.70,0.33
+60,Summer's Day,Jinsang,lofi,nostalgic,0.33,74,0.51,0.57,0.83
+61,Harbor,Tomppabeats,lofi,relaxed,0.30,70,0.62,0.55,0.88
+62,Anywhere,Idealism,lofi,melancholy,0.27,68,0.34,0.52,0.85
+63,Soulful,L'Indécis,lofi,chill,0.38,76,0.58,0.61,0.80
+64,Affection,Jinsang,lofi,focused,0.44,84,0.55,0.63,0.74
+65,Beyond the Blue,Sleepy Fish,lofi,moody,0.31,72,0.40,0.54,0.87
+66,Luv(sic) Pt. 3,Nujabes,lofi,hopeful,0.41,80,0.66,0.60,0.79
+67,The Pretender,Foo Fighters,rock,angry,0.93,158,0.28,0.52,0.06
+68,Don't Stop Believin',Journey,rock,hopeful,0.74,132,0.66,0.58,0.14
+69,Runnin' Down a Dream,Tom Petty,rock,energetic,0.86,146,0.61,0.64,0.09
+70,Black Hole Sun,Soundgarden,rock,melancholy,0.58,112,0.31,0.44,0.22
+71,Barracuda,Heart,rock,confident,0.82,140,0.59,0.61,0.11
+72,Livin' on a Prayer,Bon Jovi,rock,nostalgic,0.67,124,0.54,0.55,0.19
+73,Search and Destroy,The Stooges,rock,intense,0.89,150,0.42,0.60,0.08
+74,Come as You Are,Nirvana,rock,moody,0.63,118,0.35,0.48,0.17
+75,Sweet Child O' Mine,Guns N' Roses,rock,happy,0.71,128,0.72,0.62,0.16
+76,An Ending (Ascent),Brian Eno,ambient,melancholy,0.18,56,0.24,0.18,0.95
+77,Weightless,Marconi Union,ambient,relaxed,0.22,58,0.52,0.24,0.93
+78,Structures from Silence,Steve Roach,ambient,moody,0.31,64,0.33,0.29,0.88
+79,Deep Blue Day,Brian Eno,ambient,focused,0.26,62,0.47,0.22,0.91
+80,On Land,Brian Eno,ambient,hopeful,0.24,60,0.64,0.2,0.94
+81,The Plateaux of Mirror,"Harold Budd, Brian Eno",ambient,nostalgic,0.2,54,0.38,0.16,0.96
+82,A Walk,Tycho,ambient,chill,0.29,66,0.55,0.31,0.9
+83,Rhubarb,Aphex Twin,ambient,intense,0.42,72,0.29,0.27,0.78
+84,We Move Lightly,Dustin O'Halloran,ambient,romantic,0.25,58,0.6,0.21,0.92
+85,Tech Noir,Gunship,synthwave,confident,0.80,112,0.62,0.78,0.08
+86,Running in the Night,FM-84,synthwave,nostalgic,0.72,108,0.55,0.74,0.16
+87,Turbo Killer,Carpenter Brut,synthwave,energetic,0.88,118,0.71,0.82,0.05
+88,On the Run,Timecop1983,synthwave,melancholy,0.62,104,0.30,0.68,0.19
+89,Sunset,The Midnight,synthwave,happy,0.76,116,0.77,0.80,0.11
+90,Neo Tokyo,Perturbator,synthwave,intense,0.87,124,0.44,0.76,0.06
+91,Days of Thunder,The Midnight,synthwave,moody,0.66,102,0.36,0.71,0.21
+92,Outatime,FM-84,synthwave,hopeful,0.74,110,0.68,0.77,0.13
+93,A Real Hero,"College, Electric Youth",synthwave,romantic,0.63,100,0.58,0.72,0.24
+94,Electric Feel,MGMT,indie pop,happy,0.71,122,0.83,0.78,0.29
+95,What You Know,Two Door Cinema Club,indie pop,hopeful,0.62,114,0.75,0.70,0.38
+96,Sweet Disposition,The Temper Trap,indie pop,nostalgic,0.54,106,0.61,0.66,0.44
+97,Bags,Clairo,indie pop,melancholy,0.48,100,0.35,0.62,0.47
+98,Pumped Up Kicks,Foster the People,indie pop,energetic,0.79,128,0.80,0.83,0.25
+99,Sunflower,Rex Orange County,indie pop,romantic,0.57,110,0.72,0.69,0.41
+100,Glue Song,beabadoobee,indie pop,chill,0.51,98,0.66,0.64,0.49
+101,Space Song,Beach House,indie pop,moody,0.56,104,0.42,0.61,0.45
+102,Harmony Hall,Vampire Weekend,indie pop,confident,0.74,124,0.70,0.79,0.27
+103,Pressure Drop,Toots and the Maytals,reggae,happy,0.58,94,0.86,0.79,0.36
+104,"Get Up, Stand Up",Bob Marley & The Wailers,reggae,confident,0.62,88,0.74,0.81,0.30
+105,Night Nurse,Gregory Isaacs,reggae,chill,0.47,84,0.68,0.76,0.44
+106,Satta Massagana,The Abyssinians,reggae,relaxed,0.44,80,0.72,0.74,0.48
+107,You Can Get It If You Really Want,Jimmy Cliff,reggae,hopeful,0.55,90,0.80,0.77,0.41
+108,Concrete Jungle,Bob Marley & The Wailers,reggae,moody,0.50,86,0.45,0.72,0.39
+109,Monkey Man,Toots and the Maytals,reggae,energetic,0.69,98,0.83,0.85,0.28
+110,Sitting and Watching,Dennis Brown,reggae,nostalgic,0.46,82,0.58,0.70,0.52
+111,Equal Rights,Peter Tosh,reggae,intense,0.66,96,0.52,0.75,0.33
+112,Still D.R.E.,"Dr. Dre, Snoop Dogg",hip hop,confident,0.76,94,0.63,0.86,0.10
+113,N.Y. State of Mind,Nas,hip hop,moody,0.58,88,0.34,0.78,0.16
+114,Mama Said Knock You Out,LL Cool J,hip hop,intense,0.84,102,0.47,0.82,0.08
+115,California Love,2Pac,hip hop,happy,0.72,98,0.79,0.88,0.12
+116,It Was a Good Day,Ice Cube,hip hop,nostalgic,0.61,90,0.52,0.76,0.19
+117,Stan,Eminem,hip hop,melancholy,0.55,86,0.28,0.74,0.21
+118,Jump Around,House of Pain,hip hop,energetic,0.81,100,0.71,0.89,0.07
+119,"Nocturne No. 20 in C-sharp Minor, Op. posth.",Frédéric Chopin,classical,melancholy,0.24,58,0.22,0.18,0.96
+120,"Prelude in C Major, BWV 846",Johann Sebastian Bach,classical,hopeful,0.34,72,0.61,0.21,0.95
+121,"Adagio for Strings, Op. 11",Samuel Barber,classical,relaxed,0.28,64,0.44,0.16,0.97
+122,"Toccata and Fugue in D Minor, BWV 565",Johann Sebastian Bach,classical,intense,0.55,120,0.31,0.24,0.9
+123,"The Blue Danube, Op. 314",Johann Strauss II,classical,romantic,0.38,96,0.58,0.3,0.94
+124,"Étude in E Major, Op. 10 No. 3",Frédéric Chopin,classical,focused,0.3,80,0.4,0.19,0.96
+125,Fanfare for the Common Man,Aaron Copland,classical,happy,0.48,104,0.72,0.27,0.92
+126,"Nimrod from Enigma Variations, Op. 36",Edward Elgar,classical,nostalgic,0.26,62,0.33,0.15,0.97
+127,"Allegro from Symphony No. 7 in A Major, Op. 92",Ludwig van Beethoven,classical,energetic,0.58,132,0.55,0.28,0.89
+128,Levels,Avicii,edm,energetic,0.94,128,0.74,0.92,0.02
+129,Don't You Worry Child,Swedish House Mafia,edm,happy,0.90,126,0.82,0.90,0.04
+130,Scary Monsters and Nice Sprites,Skrillex,edm,intense,0.96,140,0.42,0.86,0.03
+131,Wake Me Up,Avicii,edm,hopeful,0.86,124,0.70,0.88,0.06
+132,Strobe,deadmau5,edm,nostalgic,0.82,122,0.56,0.84,0.08
+133,Opus,Eric Prydz,edm,moody,0.84,130,0.35,0.83,0.05
+134,Satisfaction,Benny Benassi,edm,confident,0.92,132,0.66,0.91,0.03
+135,Latch,"Disclosure, Sam Smith",edm,chill,0.78,118,0.60,0.80,0.11
+136,Clarity,"Zedd, Foxes",edm,romantic,0.80,120,0.64,0.82,0.09
+137,Pancho and Lefty,"Willie Nelson, Merle Haggard",country,nostalgic,0.52,102,0.58,0.62,0.66
+138,Chicken Fried,Zac Brown Band,country,happy,0.74,124,0.82,0.70,0.42
+139,Whiskey Lullaby,"Brad Paisley, Alison Krauss",country,melancholy,0.38,88,0.26,0.50,0.78
+140,Bless the Broken Road,Rascal Flatts,country,romantic,0.45,96,0.64,0.55,0.72
+141,Dirt on My Boots,Jon Pardi,country,confident,0.68,118,0.60,0.66,0.48
+142,Amarillo by Morning,George Strait,country,hopeful,0.56,108,0.70,0.58,0.61
+143,Folsom Prison Blues,Johnny Cash,country,intense,0.72,126,0.44,0.63,0.44
+144,Take It Easy,Eagles,country,relaxed,0.40,92,0.62,0.52,0.75
+145,Ghost in This House,Alison Krauss,country,moody,0.47,100,0.33,0.54,0.69
+146,Untitled (How Does It Feel),D'Angelo,r&b,romantic,0.48,88,0.70,0.75,0.38
+147,No Scrubs,TLC,r&b,confident,0.66,96,0.68,0.82,0.26
+148,Golden,Jill Scott,r&b,hopeful,0.52,92,0.66,0.72,0.44
+149,Cranes in the Sky,Solange,r&b,moody,0.42,80,0.34,0.68,0.50
+150,Smooth Operator,Sade,r&b,chill,0.44,84,0.60,0.70,0.47
+151,Doo Wop (That Thing),Lauryn Hill,r&b,intense,0.68,98,0.45,0.79,0.22
+152,On & On,Erykah Badu,r&b,nostalgic,0.50,86,0.56,0.73,0.41
+153,Yeah!,Usher,r&b,energetic,0.70,100,0.74,0.85,0.20
+154,Angel of Death,Slayer,metal,angry,0.96,172,0.20,0.52,0.03
+155,Blood and Thunder,Mastodon,metal,intense,0.94,160,0.28,0.55,0.05
+156,Hallowed Be Thy Name,Iron Maiden,metal,moody,0.88,148,0.22,0.48,0.07
+157,Painkiller,Judas Priest,metal,energetic,0.97,178,0.40,0.58,0.02
+158,Fade to Black,Metallica,metal,melancholy,0.86,140,0.18,0.44,0.09
+159,The Trooper,Iron Maiden,metal,confident,0.93,164,0.38,0.56,0.04
+160,Holy Diver,Dio,metal,nostalgic,0.84,144,0.24,0.46,0.08
+161,Raining Blood,Slayer,metal,angry,0.98,186,0.16,0.50,0.02
+162,Rise Today,Alter Bridge,metal,hopeful,0.90,152,0.46,0.54,0.06
+163,Home,Edward Sharpe & The Magnetic Zeros,folk,happy,0.46,112,0.76,0.54,0.84
+164,Pink Moon,Nick Drake,folk,melancholy,0.30,86,0.28,0.40,0.93
+165,White Winter Hymnal,Fleet Foxes,folk,hopeful,0.44,104,0.68,0.50,0.88
+166,The Circle Game,Joni Mitchell,folk,nostalgic,0.34,92,0.52,0.44,0.91
+167,Heartbeats,José González,folk,relaxed,0.32,88,0.60,0.42,0.94
+168,Such Great Heights,Iron & Wine,folk,romantic,0.38,96,0.66,0.48,0.87
+169,Skinny Love,Bon Iver,folk,intense,0.58,120,0.38,0.52,0.79
+170,Wagon Wheel,Old Crow Medicine Show,folk,energetic,0.62,128,0.74,0.60,0.82
+171,Fly-Day Chinatown,Nanako Sato,city pop,nostalgic,0.72,106,0.78,0.79,0.24
+172,Remember Summer Days,Anri,city pop,happy,0.76,112,0.84,0.82,0.19
+173,September,Mariya Takeuchi,city pop,romantic,0.66,100,0.7,0.76,0.31
+174,Last Summer Whisper,Anri,city pop,melancholy,0.62,98,0.44,0.72,0.35
+175,4:00 A.M.,Taeko Onuki,city pop,chill,0.64,102,0.72,0.75,0.29
+176,Sea Line,Toshiki Kadomatsu,city pop,energetic,0.8,116,0.81,0.85,0.16
+177,Midnight Pretenders,Tomoko Aran,city pop,moody,0.6,96,0.48,0.71,0.33
+178,I Can't Stop The Loneliness,Anri,city pop,confident,0.74,110,0.76,0.8,0.22
+179,Swagism,Ghost-Note,funk,happy,0.74,104,0.82,0.86,0.06
+180,What Is Hip?,Tower of Power,funk,energetic,0.82,112,0.79,0.89,0.04
+181,Cissy Strut,The Meters,funk,chill,0.62,96,0.68,0.80,0.10
+182,Barbara,The Fearless Flyers,funk,romantic,0.58,92,0.65,0.78,0.12
+183,Give Up the Funk (Tear the Roof off the Sucker),Parliament,funk,intense,0.84,118,0.60,0.83,0.05
+184,Superstition,Stevie Wonder,funk,confident,0.76,108,0.74,0.87,0.07
+185,Wait for the Moment,Vulfpeck,funk,nostalgic,0.60,100,0.58,0.76,0.14
+186,One Step Beyond,Madness,ska,happy,0.84,158,0.88,0.80,0.06
+187,Sell Out,Reel Big Fish,ska,energetic,0.88,168,0.85,0.82,0.05
+188,Gangsters,The Specials,ska,confident,0.80,150,0.76,0.78,0.08
+189,Everything Went Numb,Streetlight Manifesto,ska,intense,0.86,172,0.66,0.76,0.07
+190,Guns of Navarone,The Skatalites,ska,chill,0.72,142,0.78,0.74,0.12
+191,Ghost Town,The Specials,ska,melancholy,0.70,140,0.42,0.70,0.14
+192,Israelites,Desmond Dekker,ska,moody,0.74,146,0.50,0.72,0.10
+193,The Impression That I Get,The Mighty Mighty Bosstones,ska,hopeful,0.78,154,0.72,0.75,0.09
+194,Our House,Madness,ska,nostalgic,0.76,148,0.68,0.73,0.11
+195,Alchemist,Good Kid,indie rock,energetic,0.78,142,0.66,0.62,0.12
+196,Someday,The Strokes,indie rock,nostalgic,0.62,118,0.52,0.55,0.24
+197,Do I Wanna Know?,Arctic Monkeys,indie rock,moody,0.58,110,0.38,0.50,0.28
+198,Float On,Modest Mouse,indie rock,happy,0.72,128,0.74,0.60,0.20
+199,The Night We Met,Lord Huron,indie rock,melancholy,0.54,104,0.30,0.47,0.31
+200,Mimi's Delivery Service,Good Kid,indie rock,hopeful,0.70,124,0.68,0.58,0.18
+201,Brianstorm,Arctic Monkeys,indie rock,intense,0.84,152,0.44,0.56,0.10
+202,Take Me Out,Franz Ferdinand,indie rock,confident,0.76,134,0.62,0.61,0.15
+203,Cigarette Daydreams,Cage the Elephant,indie rock,romantic,0.60,112,0.64,0.53,0.26
