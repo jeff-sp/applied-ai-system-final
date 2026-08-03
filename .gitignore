@@ -13,3 +13,6 @@ venv/
 
 # Pytest cache
 .pytest_cache/
+
+# Run logs
+logs/
