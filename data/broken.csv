@@ -1,0 +1,7 @@
+id,title,artist,genre,mood,energy,tempo_bpm,valence,danceability,acousticness
+1,Can't Stop the Feeling!,Justin Timberlake,pop,happy,0.82,118,0.84,0.79,0.18
+2,Aruarian Dance,Nujabes,lofi,chill,0.42,78,0.56,0.62,0.71
+3,Mr. Brightside,The Killers,rock,intense,0.91,152,0.48,0.66,0.10
+4,Staying There,L'Indécis,lofi,chill,9.9,72,0.60,0.58,0.86
+5,Physical,,pop,,0.93,132,0.77,0.88,0.05
+6,Music for Airports 1/1,Brian Eno,ambient,chill,loud,60,0.65,0.41,0.92

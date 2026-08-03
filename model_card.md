@@ -126,3 +126,19 @@ Prompts:
 - How this changed the way you think about music recommendation apps  
 
 I learned these systems don't actually understand music. They just compare labels, numbers, and add up a score using simple math. AI tools helped me to see what biases the recommender may run into. I needed to double-check them after implementing each function. What surprised me was how much one setting can take over. I gave energy extra weight and suddenly it was steering almost every recommendation so genre and mood barely mattered. Now when Spotify suggests a song, I think about whoever decided which factors count and how much. 
+
+## 10. Misuse
+
+Could your AI be misused, and how would you prevent that?
+
+Misuse risks: Someone could game the scoring (artists mislabeling songs' genre/energy to rank higher), the system could be used to push certain artists unfairly if weights were tuned with a commercial bias, or user preference data could be collected and used for profiling beyond recommendations.
+
+Prevention: Validate song metadata from a trusted source rather than self-reported labels, keep the scoring logic transparent (the model card itself helps here), don't store user preferences longer than needed, and audit recommendations periodically to check no artist or genre is being systematically favored beyond what the weights intend.
+
+## 11. Testing AI's reliability
+
+What surprised me was that reliability problems don't always look like errors. The system never crashed and its output always seemed reasonable. Energy quietly dominated every ranking because its scoring always adds points, even for bad matches. The tell was suspicious consistency: "energy was a close match" in nearly every explanation. I learned to check why something scored high, not just whether the output looked fine.
+
+## 12. Collaboration with AI
+
+I used AI throughout the project to write scoring functions, expand the song library, and stress-test the recommender's logic. The most helpful moment was when the AI spotted the energy bias: it pointed out that because energy difference is on a 0–1 scale, the energy term always adds points even for terrible matches, which explained why "energy was a close match" appeared in nearly every recommendation. I hadn't noticed that pattern was a math problem, not a coincidence. A flawed suggestion came when I asked it to rebalance the weights. AI initially suggested changes that looked reasonable but didn't fix the real issue, since energy still contributed a positive baseline to every song no matter its weight. I had to test each function myself to catch that, which reinforced that AI suggestions need verification rather than blind trust.
