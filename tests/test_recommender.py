@@ -1,4 +1,12 @@
-from src.recommender import score_song, recommend_songs, load_songs
+from src.models import MAX_SCORE
+from src.recommender import (
+    W_ENERGY,
+    W_GENRE,
+    W_MOOD,
+    load_songs,
+    recommend_songs,
+    score_song,
+)
 
 
 def make_songs():
@@ -42,6 +50,26 @@ def make_user_prefs():
     }
 
 
+# --- the weights themselves -------------------------------------------------
+#
+# The tests below assert exact totals, so they break on any weight change - but
+# they break as a *number* mismatch, which says nothing about which rule was
+# violated. These two state the rules directly.
+
+def test_genre_is_weighted_above_mood():
+    """The documented ranking rule: a genre hit must always outbid a mood hit."""
+    assert W_GENRE > W_MOOD
+
+
+def test_weights_sum_to_max_score():
+    """
+    MAX_SCORE lives in models.py, the weights in recommender.py, and
+    compute_confidence() divides by MAX_SCORE. Without this, retuning a weight
+    silently skews every confidence value instead of failing.
+    """
+    assert W_GENRE + W_MOOD + W_ENERGY == MAX_SCORE
+
+
 # --- score_song -------------------------------------------------------------
 
 def test_score_song_perfect_match_caps_at_four():
@@ -50,7 +78,7 @@ def test_score_song_perfect_match_caps_at_four():
 
     score, reasons = score_song(user, song)
 
-    # genre (1.0) + mood (1.0) + energy 2.0 * (1 - 0) = 4.0
+    # genre (1.5) + mood (0.5) + energy 2.0 * (1 - 0) = 4.0
     assert score == 4.0
     assert any("genre" in r for r in reasons)
     assert any("mood" in r for r in reasons)
@@ -69,6 +97,23 @@ def test_score_song_no_categorical_match_scores_lower():
     assert not any("mood" in r for r in reasons)
     # energy_points 1.2 < 1.6, so no energy reason is added
     assert reasons == []
+
+
+def test_genre_match_outweighs_mood_match():
+    """Right genre / wrong mood must beat wrong genre / right mood, energy held equal."""
+    user = make_user_prefs()  # pop, happy, energy 0.8
+    common = {"tempo_bpm": 120, "valence": 0.5, "danceability": 0.5, "acousticness": 0.5}
+    right_genre = {"id": 10, "title": "A", "artist": "A", "genre": "pop",
+                   "mood": "moody", "energy": 0.8, **common}
+    right_mood = {"id": 11, "title": "B", "artist": "B", "genre": "metal",
+                  "mood": "happy", "energy": 0.8, **common}
+
+    genre_score, _ = score_song(user, right_genre)
+    mood_score, _ = score_song(user, right_mood)
+
+    assert genre_score > mood_score
+    # genre 1.5 + energy 2.0 = 3.5 vs mood 0.5 + energy 2.0 = 2.5
+    assert (genre_score, mood_score) == (3.5, 2.5)
 
 
 def test_score_song_returns_score_and_reasons_tuple():
