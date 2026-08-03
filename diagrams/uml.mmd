@@ -3,9 +3,9 @@ classDiagram
         +int id
         +str title
         +str artist
-        +str genre        %% categorical · CORE · score +2.0 (PRIMARY)
-        +str mood         %% categorical · CORE · score +1.0 (secondary)
-        +float energy     %% continuous 0-1 · CORE · closeness x1.0
+        +str genre        %% categorical · CORE · score +1.5 (primary categorical)
+        +str mood         %% categorical · CORE · score +0.5 (secondary)
+        +float energy     %% continuous 0-1 · CORE · closeness x2.0
         +float acousticness  %% continuous 0-1 · CORE
         +float tempo_bpm  %% 60-152 · needs scaling · v2
         +float valence    %% continuous 0-1 · optional
@@ -31,4 +31,4 @@ classDiagram
     Recommender ..> UserProfile : scores against
     UserProfile ..> Song : preferences compared to features
 
-    note for Recommender "Genre-first scoring: genre +2.0 (primary) > mood +1.0 > energy closeness x1.0. Perfect song caps at 4.0. See docs/algorithm_recipe.md"
+    note for Recommender "Scoring: genre +1.5 > mood +0.5 (a genre match is always worth more than a mood match), energy closeness x2.0. Energy carries the largest single share, so genre and mood break ties on an energy-driven order. Perfect song caps at 4.0. See README.md; docs/algorithm_recipe.md is the superseded Phase 2 design."

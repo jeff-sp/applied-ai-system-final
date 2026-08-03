@@ -1,3 +1,17 @@
+> **Superseded — kept as the Phase 2 design record.** The weights below (genre
+> +2.0, mood +1.0, energy ×1.0) were the original genre-first design and were
+> never shipped. The implementation uses **genre +1.5, mood +0.5, energy ×2.0**
+> (`src/recommender.py:44-46`), so the worked examples at the end of this
+> document do not reproduce under the current code. See
+> [README.md](../README.md) § *The weights, and the ones I changed* for how and
+> why they moved.
+>
+> The **genre-first stance itself still holds**: a genre match is worth more
+> than a mood match — 3× more, in fact, up from 2× here. What changed is that
+> energy was promoted from a fine-tuner (×1.0) to the largest single share
+> (×2.0), so genre and mood now break ties on an energy-driven ranking rather
+> than deciding the order outright.
+
 # Phase 2 — Algorithm Recipe: Scoring Logic
 
 This document is the **design** for how `score_song()` ranks songs against a

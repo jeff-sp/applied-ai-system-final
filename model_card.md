@@ -35,7 +35,7 @@ Prompts:
 
 Avoid code here. Pretend you are explaining the idea to a friend who does not program.
 
-Every gons gets a score based on how well it matches your preferences for genre, mood, and energy. The better the match, the higher the score, and the highest-scoring songs are recommended first.
+Every song gets a score based on how well it matches your preferences for genre, mood, and energy. The better the match, the higher the score, and the highest-scoring songs are recommended first. The three parts are not worth the same: getting the genre right earns 1.5 points, getting the mood right earns 0.5, and energy is worth up to 2.0 depending on how close it lands. Genre counts for three times as much as mood on purpose — if you ask for rock, a confident rock song should beat an intense funk one.
 
 ---
 
@@ -50,7 +50,7 @@ Prompts:
 - Did you add or remove data  
 - Are there parts of musical taste missing in the dataset  
 
-The recommender uses a small song library: 18 songs, each with labels for title, artist, genre, mood, and sound features like energy, tempo, positivity, danceability, and acousticness. It does not listen to the music; it compares these labels and numbers to your preferences. Because the dataset is small and hand-curated, many genres and moods have only one song, so the recommendations have limitied variety.
+The recommender uses a song library of 203 songs across 19 genres, each with labels for title, artist, genre, mood, and sound features like energy, tempo, positivity, danceability, and acousticness. It does not listen to the music; it compares these labels and numbers to your preferences. The library started at 18 songs, where most genres had only one entry and variety was poor; every genre now has at least 10 songs (jazz has 23). Moods are still thinner — 13 of them across the whole library — so it is much easier to find a song in the genre you asked for than one in the mood you asked for.
 
 ---
 
@@ -79,7 +79,7 @@ Prompts:
 - Cases where the system overfits to one preference  
 - Ways the scoring might unintentionally favor some users  
 
-Energy is added to every song, even bad matches. Since energy is on a 0-1 scale, abs(diff) never seeds 1.0, so energy_points is essentially always positive (0 to 2.0). Combined with weight (W_ENERGY = 2.0 vs. 1.0 for genre and mood), energy is both the loudest signal and a near-constant baseline. "Energy was a close match" appears in almost every single recommendation. Genre.mood become tie-breakers on top of an energy-driven ranking, not the other way around.
+Energy is added to every song, even bad matches. Since energy is on a 0-1 scale, abs(diff) never seeds 1.0, so energy_points is essentially always positive (0 to 2.0). Combined with weight (W_ENERGY = 2.0 vs. 1.5 for genre and 0.5 for mood), energy is both the loudest signal and a near-constant baseline. "Energy was a close match" appears in almost every single recommendation. Genre and mood become tie-breakers on top of an energy-driven ranking, not the other way around. Within that tie-break, genre is weighted 3x mood, so a wrong-genre song can no longer match an on-genre one by hitting the mood — but the flip side is that mood, at 0.5, now barely moves the ranking at all.
 
 ---
 

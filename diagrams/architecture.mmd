@@ -6,43 +6,47 @@ flowchart TD
     U --> CLI
 
     %% ---------- RETRIEVAL (the R in RAG) ----------
-    subgraph RET["Retriever"]
+    subgraph RET["Retriever · src/retriever.py"]
         KB[("Music Knowledge Base<br/>data/songs.csv")]
-        LOAD["load_songs()<br/>parse + type-cast catalog"]
-        SCORE["score_song()<br/>genre +1.0 · mood +1.0 · energy x2.0"]
-        RANK["recommend_songs()<br/>sort by score, cut to top-k"]
-        KB --> LOAD --> SCORE --> RANK
+        LOAD["load_songs()<br/>parse · type-cast · validate rows"]
+        EVAL["evaluate_song()<br/>genre +1.5 · mood +0.5 · energy x2.0<br/>genre outranks mood 3:1<br/>emits a SignalMatch per signal"]
+        RANK["rank_songs()<br/>sort by score, cut to top-k"]
+        CONF["compute_confidence()<br/>0.6 x score + 0.4 x signal coverage<br/>band: high / medium / low"]
+        KB --> LOAD --> EVAL --> RANK --> CONF
     end
     CLI -- "query: user_prefs, k" --> LOAD
 
     %% ---------- AUGMENTED GENERATION ----------
-    subgraph GEN["Explanation Agent"]
-        CTX["Retrieved context<br/>(song, score, reasons)"]
-        EXPL["explain_recommendation()<br/>grounds every claim in retrieved fields"]
-        CTX --> EXPL
+    subgraph GEN["Explanation Agent · src/explainer.py"]
+        CTX["RetrievedSong<br/>song + score + signals + confidence"]
+        CLAIM["build claims<br/>one per signal, hit or miss"]
+        CHECK{"is_claim_grounded()<br/>supported by the record?"}
+        PROSE["render prose<br/>wording constrained by band"]
+        CTX --> CLAIM --> CHECK
+        CHECK -- "yes" --> PROSE
     end
-    RANK -- "top-k + evidence" --> CTX
+    CONF -- "top-k + evidence" --> CTX
 
     %% ---------- GUARDRAILS ----------
-    GUARD["Guardrails & Logging<br/>missing/malformed rows · empty-result fallback<br/>'No strong matches, but worth a listen'"]
+    GUARD["Guardrails & Logging<br/>src/guardrails.py · src/logging_setup.py<br/>skip malformed rows · reject/clamp bad profiles<br/>drop ungrounded claims · logs/run.log"]
     LOAD -.-> GUARD
     RANK -.-> GUARD
-    EXPL -.-> GUARD
+    CHECK -- "no: drop claim<br/>(withhold if none survive)" --> GUARD
 
     %% ---------- OUTPUT ----------
-    OUT["Ranked recommendations<br/>+ grounded 'why it matches'<br/>print_recommendations()"]
-    EXPL --> OUT
+    OUT["Ranked recommendations<br/>+ grounded explanation + confidence<br/>+ run reliability report"]
+    PROSE --> OUT
     OUT --> U
 
     %% ---------- VERIFICATION ----------
-    subgraph EVAL["Evaluation & Human Check"]
-        TEST["Automated Tester<br/>tests/test_recommender.py<br/>scoring · ranking · edge cases"]
-        HUMAN["Human Review<br/>multi-profile demo runs:<br/>are picks + reasons sensible?"]
+    subgraph EVALS["Evaluation & Human Check"]
+        TEST["Automated Tester · 63 tests<br/>scoring · guardrails · confidence<br/>grounding · end-to-end CLI"]
+        HUMAN["Human Review<br/>seven contrasting profiles:<br/>are picks, confidence + caveats sensible?"]
     end
     OUT --> TEST
     OUT --> HUMAN
-    TEST -- "regressions" --> SCORE
-    HUMAN -- "re-tune weights / wording" --> SCORE
+    TEST -- "regressions" --> EVAL
+    HUMAN -- "re-tune weights / thresholds" --> EVAL
 
     %% ---------- STYLES ----------
     classDef store fill:#e8eaf6,stroke:#3f51b5
