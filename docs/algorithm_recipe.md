@@ -11,6 +11,19 @@
 > energy was promoted from a fine-tuner (×1.0) to the largest single share
 > (×2.0), so genre and mood now break ties on an energy-driven ranking rather
 > than deciding the order outright.
+>
+> **Superseded a second time, in scope rather than in values.** This document
+> describes scoring as the *retrieval* mechanism — the thing that decides which
+> songs come back. It is now the **reranking** mechanism. Embeddings retrieve a
+> 20-song shortlist from a vector index, and the weights below reorder that
+> shortlist; they no longer see the whole catalog. The arithmetic is unchanged
+> and `src/recommender.py` was not modified, but "score every song, sort, cut to
+> top-k" now reads "score every *shortlisted* song, sort, cut to top-k".
+>
+> Why the split: an embedding understands *"something mellow for studying"* but
+> cannot honour a numeric `target_energy`, and a weighted scorer can do the
+> reverse. The retrieval layer is documented in
+> [retrieval_recipe.md](retrieval_recipe.md).
 
 # Phase 2 — Algorithm Recipe: Scoring Logic
 

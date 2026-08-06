@@ -1,13 +1,14 @@
 classDiagram
+    %% ---------- catalog domain ----------
     class Song {
         +int id
         +str title
         +str artist
-        +str genre        %% categorical · CORE · score +1.5 (primary categorical)
-        +str mood         %% categorical · CORE · score +0.5 (secondary)
+        +str genre        %% categorical · CORE · rerank +1.5 (primary categorical)
+        +str mood         %% categorical · CORE · rerank +0.5 (secondary)
         +float energy     %% continuous 0-1 · CORE · closeness x2.0
         +float acousticness  %% continuous 0-1 · CORE
-        +float tempo_bpm  %% 60-152 · needs scaling · v2
+        +float tempo_bpm  %% 54-200 · needs scaling · v2
         +float valence    %% continuous 0-1 · optional
         +float danceability  %% continuous 0-1 · optional
     }
@@ -21,14 +22,143 @@ classDiagram
         +float target_acousticness  %% target for Song.acousticness (was bool)
     }
 
+    %% ---------- retrieval domain ----------
+    class Chunk {
+        +str chunk_id     %% "song:47" | "genres:city-pop:0" · the citation handle
+        +str kind         %% KIND_SONG | KIND_PROSE
+        +str title
+        +str text
+        +str source
+        +Dict metadata
+    }
+
+    class RetrievedChunk {
+        +Chunk chunk
+        +float similarity  %% cosine, -1.0 to 1.0
+    }
+
+    class RetrievedSong {
+        +Dict song
+        +float score          %% ALWAYS the weighted score out of 4.0
+        +ScoreBreakdown breakdown
+        +float confidence
+        +str band
+        +float similarity     %% semantic path only, else None
+        +str chunk_id         %% semantic path only, else None
+    }
+
+    %% ---------- embedding backends ----------
+    class Embedder {
+        <<abstract>>
+        +str name
+        +int dimensions
+        +float similarity_floor
+        +float similarity_ceiling
+        +bool contributes_confidence
+        +embed_documents(chunks) List
+        +embed_query(text) List
+        +doc_text(chunk) str
+        +query_text(text) str
+    }
+
+    class GeminiEmbedder {
+        +gemini-embedding-2 @ 768
+        +applies DOC_PREFIX / QUERY_PREFIX
+        +one types.Content per item
+    }
+
+    class HashingEmbedder {
+        +IDF-weighted feature hashing
+        +deterministic · no network
+        +skips the prefixes (see docstring)
+        +contributes_confidence = False
+    }
+
+    class VectorStore {
+        +List~StoredVector~ entries
+        +str fingerprint
+        +build(chunks, embedder, fp)$ VectorStore
+        +load(path)$ VectorStore
+        +save(path)
+        +search(qvec, k, kind) List~RetrievedChunk~
+        +search_stratified(qvec, k_songs, k_prose)
+        +check_fresh(fingerprint) bool
+    }
+
+    %% ---------- retrieval and generation ----------
+    class Retriever {
+        +List songs
+        +Counter genre_index
+        +Counter mood_index
+        +retrieve(user_prefs, k) List~RetrievedSong~
+    }
+
+    class SemanticRetriever {
+        +Retriever retriever
+        +VectorStore store
+        +Embedder embedder
+        +retrieve(query, k, context_k) tuple
+        +average_similarity() float
+    }
+
+    class Generator {
+        <<abstract>>
+        +str name
+        +generate(prompt) str
+    }
+
+    class GeminiGenerator {
+        +gemini-flash-lite-latest
+        +raises on failure, never returns the error text
+    }
+
+    class TemplateGenerator {
+        +delegates to ExplanationAgent
+    }
+
+    class AnswerAgent {
+        +Generator generator
+        +ExplanationAgent fallback
+        +answer(query, chunks, records, prefs) Answer
+        +grounding_rate() float
+    }
+
+    class ExplanationAgent {
+        +explain(user_prefs, record) str
+        +grounding_rate() float
+    }
+
     class Recommender {
         +List~Song~ songs
         +recommend(user, k) List~Song~
         +explain_recommendation(user, song) str
     }
 
+    %% ---------- relationships ----------
+    Embedder <|-- GeminiEmbedder
+    Embedder <|-- HashingEmbedder
+    Generator <|-- GeminiGenerator
+    Generator <|-- TemplateGenerator
+
+    VectorStore o-- "many" Chunk : stores embedded
+    RetrievedChunk --> Chunk : wraps
+    VectorStore ..> RetrievedChunk : returns
+
+    SemanticRetriever *-- Retriever : composes, does not replace
+    SemanticRetriever --> VectorStore : searches
+    SemanticRetriever --> Embedder : embeds the query
+    SemanticRetriever ..> RetrievedSong : returns reranked
+
+    AnswerAgent --> Generator : generates with
+    AnswerAgent --> ExplanationAgent : falls back to
+    TemplateGenerator ..> ExplanationAgent : delegates to
+
     Recommender o-- "many" Song : holds catalog
     Recommender ..> UserProfile : scores against
     UserProfile ..> Song : preferences compared to features
 
-    note for Recommender "Scoring: genre +1.5 > mood +0.5 (a genre match is always worth more than a mood match), energy closeness x2.0. Energy carries the largest single share, so genre and mood break ties on an energy-driven order. Perfect song caps at 4.0. See README.md; docs/algorithm_recipe.md is the superseded Phase 2 design."
+    note for SemanticRetriever "Two-stage hybrid. Embeddings retrieve a 20-song shortlist; evaluate_song() reranks it. The blend of similarity and score is a private sort key - RetrievedSong.score always means the weighted score out of 4.0, never the blend."
+
+    note for Recommender "The weights now govern RERANKING, not retrieval: genre +1.5 > mood +0.5, energy closeness x2.0, perfect song caps at 4.0. See docs/retrieval_recipe.md for the retrieval layer; docs/algorithm_recipe.md is the superseded Phase 2 design."
+
+    note for AnswerAgent "The model never selects songs. It writes prose about a list the ranker already fixed, and every factual sentence must cite the passage it came from. A fabricated citation drops that sentence; a substituted song withholds the whole answer."

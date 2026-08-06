@@ -1,3 +1,11 @@
-# The recommender itself runs on the Python standard library only.
-# pytest is needed to run the test suite.
+# Gemini embeddings (retrieval) and generation (explanations).
+# Both are OPTIONAL at runtime: the imports are lazy, so the offline path -
+# hashing embedder + template explainer - runs on the standard library alone.
+# google-genai requires Python 3.10+; this project targets 3.12.
+google-genai>=1.0.0
+
+# Reads GEMINI_API_KEY from .env. Optional; main.py degrades gracefully without it.
+python-dotenv>=1.0.0
+
+# Test suite.
 pytest

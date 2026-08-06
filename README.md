@@ -7,31 +7,59 @@ The original goal was to represent songs and a listener's "taste profile" as str
 
 ## Summary
 
-HarmonyRanker is a **content-based** music recommender. It does not listen to audio and it does not use collaborative filtering — it compares each song's labeled attributes (genre, mood, energy) against a user's stated preferences, produces a numeric score, and ranks the catalog.
+HarmonyRanker is a **retrieval-augmented music recommender with content-based reranking**. It does not listen to audio and it does not use collaborative filtering. It answers a natural-language request in two stages: embeddings retrieve a shortlist of candidate songs and the background prose that explains them, then a hand-tuned weighted scorer reranks that shortlist against genre, mood, and a numeric energy target. A language model writes the final explanation — but only about the songs the scorer already chose.
 
-Why it matters: it is a working, fully legible model of how commercial recommenders actually behave. Every number in the ranking is traceable to a specific weight in a specific line of code, which makes it a good vehicle for seeing how a single weighting decision can quietly dominate an entire system's output — the exact failure mode documented in [Testing Summary](#testing-summary) and [model_card.md](model_card.md).
+Why it matters: it is a working, fully legible model of how commercial recommenders actually behave. Every recommendation is still traceable to a specific weight in a specific line of code, which makes it a good vehicle for seeing how a single weighting decision can quietly dominate an entire system's output — the exact failure mode documented in [Testing Summary](#testing-summary) and [model_card.md](model_card.md).
+
+**The model never picks the songs.** That division is the point of the design: retrieval and the scorer make the decision, and generation describes it. Every factual sentence the model writes must cite the retrieved passage it came from, and anything it cannot support is dropped or withheld — see [Grounding](#what-is-and-isnt-deterministic-now).
+
+It runs with no API key at all: retrieval falls back to a deterministic offline embedder and generation to the original template explainer.
 
 ---
 
 ## Architecture Overview
 
-The system diagram lives at [diagrams/architecture.mmd](diagrams/architecture.mmd) (Mermaid). It maps the recommender onto a retrieval-augmented pattern:
+The system diagram lives at [diagrams/architecture.mmd](diagrams/architecture.mmd) (Mermaid). The pipeline runs in two phases.
 
-- **Input** — a user taste profile (`favorite_genre`, `favorite_mood`, `target_energy`) enters through the CLI runner, [src/main.py](src/main.py).
-- **Retriever** ([src/retriever.py](src/retriever.py)) — owns the knowledge base. `load_songs()` parses, type-casts and validates `data/songs.csv`; `evaluate_song()` scores each song against the profile *and records the evidence for that score*; `rank_songs()` sorts descending and cuts to top-k. Scoring (a per-song number) stays separate from ranking (the sort-and-cut policy) so either can change without touching the other.
-- **Retrieved records** — the retriever does not hand back bare songs. Each result is a `RetrievedSong` carrying the song, its score, a `SignalMatch` per signal (hit *or* miss), a confidence value, and a confidence band.
-- **Explanation Agent** ([src/explainer.py](src/explainer.py)) — the generation half. It never touches the catalog; it sees only the retrieved record and builds its sentences from that evidence. Retrieval doesn't decorate the answer, it *is* the answer: the wording, the hedging, and the caveats are all derived from which signals matched. Generation is template-based and deterministic — no model call, no network, no API key — which is what makes the output testable.
-- **Guardrails** ([src/guardrails.py](src/guardrails.py)) — three layers: malformed catalog rows are skipped and logged instead of crashing the run or poisoning the ranking; invalid profiles are rejected before scoring (an out-of-range `target_energy` is clamped and logged); and every claim the agent wants to make is checked against the retrieved record before it can be printed. An unsupported claim is dropped; if no claim survives, the explanation is withheld rather than invented.
+**Build time — once, via `python3 -m src.ingest`:**
+
+- **Corpus** ([src/corpus.py](src/corpus.py)) — two sources become one uniform list of chunks. Each of the 203 catalog rows is rendered as a *song card*: a couple of sentences of natural language that keep every raw number verbatim, because embeddings match "high energy" far better than they match `0.82`, while the grounding check needs the digits. Alongside them, ~7,200 words of hand-written prose in [docs/kb/](docs/kb/) covering all 19 genres, all 13 moods, seven eras, and ten listening contexts.
+- **Chunking** ([src/chunking.py](src/chunking.py)) — prose is split on `##` headings, packed into ~900-character windows with 150 characters of word-aligned overlap. Overlap never crosses a heading boundary; a runt final chunk is merged back rather than orphaned. Song cards are never split.
+- **Embedding and storage** ([src/embeddings.py](src/embeddings.py), [src/vector_store.py](src/vector_store.py)) — 277 chunks embedded with `gemini-embedding-2` at 768 dimensions and written to `data/index/gemini_index.jsonl`, which is committed. A corpus fingerprint in the index header is how a stale index gets caught.
+
+**Query time — per question:**
+
+- **Input** — a natural-language query enters through the CLI runner, [src/main.py](src/main.py). `--mode classic` still accepts the original structured taste profile.
+- **Retrieval** ([src/retriever.py](src/retriever.py)) — the query is embedded and matched by cosine similarity, *stratified* so song cards and prose are retrieved to separate depths (a single top-k would let 203 cards crowd the prose out entirely). This yields a 20-song shortlist plus three prose passages.
+- **Reranking** — `extract_prefs()` derives a structured profile from the query text deterministically, with no model call: longest-match against the catalog's own genre and mood vocabulary, a small synonym map, an energy-hint table, and negation handling so *"nothing too energetic"* does not request energetic music. The original `evaluate_song()` then scores the shortlist exactly as it always did, and the results are ordered by a blend of similarity and weighted score.
+- **Retrieved records** — each result is a `RetrievedSong` carrying the song, its score, a `SignalMatch` per signal (hit *or* miss), confidence, band, and now the retrieval similarity and chunk id it came from.
+- **Generation** ([src/answerer.py](src/answerer.py), [src/llm_client.py](src/llm_client.py)) — the retrieved passages, the query, and the already-chosen song list are assembled into a prompt and sent to `gemini-flash-lite-latest`. The prompt fences the list explicitly: *do not add, drop, or substitute*.
+- **Guardrails** ([src/guardrails.py](src/guardrails.py)) — now five layers. The original three (malformed rows skipped, invalid profiles rejected, template claims checked against the record) are unchanged. Two more guard model output: a sentence citing a passage that was not retrieved is dropped, and an answer naming a song the ranker did not select is withheld *in full*. A withheld answer falls back to the deterministic template explainer.
 - **Logging** ([src/logging_setup.py](src/logging_setup.py)) — every stage logs to `logs/run.log` (DEBUG) with warnings surfaced on the console. `--log-level INFO` shows the pipeline narrating itself.
-- **Evaluation** — 63 automated tests across five files, plus a per-run reliability report (average confidence, low-confidence share, grounding rate) and human review of seven contrasting profiles. See [Testing Summary](#testing-summary), and [Reproducible Execution Evidence](#reproducible-execution-evidence) for the captured runs behind every number in it.
+- **Evaluation** — 232 automated tests across eleven files, plus a per-run reliability report (average confidence, chunk similarity, citation density, fabricated citations, substituted songs, grounding rate). See [Testing Summary](#testing-summary) and [Reproducible Execution Evidence](#reproducible-execution-evidence).
 
-The class structure is in [diagrams/uml.mmd](diagrams/uml.mmd): `Song`, `UserProfile`, and `Recommender`.
+The class structure is in [diagrams/uml.mmd](diagrams/uml.mmd).
+
+### What is and isn't deterministic now
+
+Earlier versions of this README claimed the whole system was deterministic, with "no model call, no network, no API key". That was true and is no longer. Precisely what changed:
+
+| Stage | Deterministic? |
+|---|---|
+| Chunking | **Yes** — pure function of the text; pinned by tests |
+| Embedding | **Yes**, given a fixed index. The committed index is a fixed artifact |
+| Song *selection* | **Yes** — retrieval order plus `evaluate_song()`; no model involvement |
+| Confidence and bands | **Yes** — the offline embedder deliberately does not move them |
+| Explanation *wording* | **No** — this is the model's contribution, and the only non-deterministic part |
+| The entire offline path | **Yes** — hashing embedder plus template explainer, end to end |
+
+Two things keep this honest rather than aspirational. The offline path is what the **test suite exercises**: `conftest.py` installs autouse fixtures that block every socket and strip `GEMINI_API_KEY`, so a passing run is proof that nothing was sent anywhere and nothing was billed. And the run report always names which backend actually served the request, so a silent downgrade to offline can never be mistaken for a working Gemini run.
 
 ---
 
 ## Setup Instructions
 
-**Requirements:** Python 3.8+
+**Requirements:** Python 3.10+ (the project targets 3.12). The `google-genai` SDK requires 3.10 or newer, so the older 3.8 floor no longer applies.
 
 1. Clone and enter the repo:
 
@@ -39,10 +67,10 @@ The class structure is in [diagrams/uml.mmd](diagrams/uml.mmd): `Song`, `UserPro
 git clone https://github.com/jeff-sp/applied-ai-system-final.git && cd applied-ai-system-final
 ```
 
-2. Create and activate a virtual environment (recommended):
+2. Create and activate a virtual environment:
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv && source .venv/bin/activate
 ```
 
 3. Install dependencies:
@@ -50,8 +78,6 @@ python3 -m venv .venv && source .venv/bin/activate
 ```bash
 pip install -r requirements.txt
 ```
-
-> The recommender itself uses only the Python standard library — `pip install` is needed for the test runner, not for the app.
 
 4. Run the demo from the repo root:
 
@@ -67,34 +93,76 @@ python3 -m src.main
 python3 -m pytest -q
 ```
 
-Expected: `63 passed`.
+Expected: `232 passed`. Run it with the virtualenv's interpreter — `tests/test_embeddings.py` imports `google.genai`, so a bare system Python without the dependencies installed fails 8 of them for that reason alone. The suite never touches the network — see [What is and isn't deterministic now](#what-is-and-isnt-deterministic-now).
+
+### Running offline (no API key)
+
+**This step is optional.** With no `GEMINI_API_KEY` set, everything above already works: retrieval uses a deterministic offline embedder built in memory in ~50 ms, and generation uses the original template explainer. The run prints a banner saying so, and the run report names both backends. Nothing is silently degraded.
+
+### Enabling Gemini
+
+One key covers both embeddings and generation.
+
+```bash
+cp .env.example .env      # then put your key in it: GEMINI_API_KEY=...
+```
+
+Get a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey). `.env` is gitignored.
+
+Then build the vector index once. This is the **only step that costs anything** — 277 embedding calls, run once, not per query:
+
+```bash
+python3 -m src.ingest --dry-run    # chunk and report sizes; zero API calls
+python3 -m src.ingest              # embed 277 chunks and write the index
+python3 -m src.ingest --check      # exit 0 when the index matches the corpus
+```
+
+After that, `python3 -m src.main` uses Gemini for both retrieval and generation, and each query costs one embedding call plus one generation call. Re-run ingest only when `data/songs.csv` or `docs/kb/` changes — `--check` tells you when that has happened.
+
+> **Note on `data/index/gemini_index.jsonl`:** the index is committed, so anyone cloning the repo gets working Gemini retrieval without rebuilding it or spending anything. The three ingest commands above are only needed if you change `data/songs.csv` or `docs/kb/`. With no key set, the committed index cannot be used — a query has to be embedded by the same model that built it — so the run warns and falls back to the offline embedder rather than comparing incompatible vectors.
 
 ### CLI options
 
 ```bash
-python3 -m src.main --profile lofi -k 3 --log-level INFO
+python3 -m src.main --query "something moody for a late night drive" --show-chunks
 ```
 
 | Flag | Default | What it does |
 |---|---|---|
+| `--mode` | `rag` | `rag` is the full pipeline. `classic` runs the original pre-RAG scoring path unchanged |
+| `--query` | — | Ask one natural-language question instead of running a demo profile |
 | `--profile` | `all` | One of `pop`, `lofi`, `rock`, `metal`, `city pop`, `jazz`, `funk`, or `all`. Quote the ones with a space: `--profile "city pop"` |
 | `-k` | `5` | How many songs to recommend |
+| `--context-k` | `3` | How many prose passages are injected into the prompt |
+| `--embedder` | `auto` | `auto`, `gemini`, or `offline`. `auto` uses Gemini when a key and a fresh index are both present |
+| `--generator` | `auto` | `auto`, `gemini`, `template`, or `off`. `off` retrieves but generates nothing |
+| `--index` | `data/index/gemini_index.jsonl` | Point at a different vector index |
 | `--catalog` | `data/songs.csv` | Point at a different catalog CSV |
+| `--kb-dir` | `docs/kb` | Point at a different prose knowledge base |
+| `--show-chunks` | off | Print the retrieved passage ids and their similarities |
 | `--log-level` | `WARNING` | Console verbosity; `logs/run.log` always gets the full DEBUG trail |
 
-### Trying your own profile
+### Asking your own question
 
-Add an entry to `PROFILES` in [src/main.py](src/main.py). A profile needs exactly three keys:
+Just ask:
 
-```python
-my_profile = {
-    "favorite_genre": "jazz",     # must match a genre string in data/songs.csv
-    "favorite_mood": "relaxed",
-    "target_energy": 0.35,        # 0.0 (calm) to 1.0 (intense)
-}
+```bash
+python3 -m src.main --query "something confident to walk into a room to" -k 3
 ```
 
-Anything else is rejected by the profile guardrail with a message naming the offending field, rather than silently producing confident nonsense.
+The system prints what it understood the request to mean (`understood as: genre=funk · mood=confident · energy=0.62`) before the recommendations, so a misreading is visible rather than hidden.
+
+To add a permanent demo profile, add an entry to `PROFILES` in [src/main.py](src/main.py). Each carries both representations — the natural-language `query` used by rag mode and the structured `prefs` used by classic mode:
+
+```python
+"my profile": {
+    "label": "Relaxed jazz",
+    "query": "relaxed jazz for a quiet evening",
+    "prefs": {"favorite_genre": "jazz", "favorite_mood": "relaxed", "target_energy": 0.35},
+},
+```
+
+A test asserts that `extract_prefs()` recovers the `prefs` from the `query`, so the two cannot drift apart. Anything malformed is rejected by the profile guardrail with a message naming the offending field, rather than silently producing confident nonsense.
 
 ---
 
@@ -102,12 +170,14 @@ Anything else is rejected by the profile guardrail with a message naming the off
 
 Three of the seven demo profiles are shown below — real output against the 203-song catalog. Every sentence after the score line is generated by the Explanation Agent from the retrieved evidence — nothing is hard-coded per song. Each block is verbatim except for the leading `Loaded 203 songs from data/songs.csv` line and the trailing run report, which are trimmed here and shown in full under [Reproducible Execution Evidence](#reproducible-execution-evidence).
 
+These three run in **`--mode classic`** on purpose: it is the pre-RAG scoring path with no retrieval or generation in front of it, which is what makes the weighting behaviour below readable in isolation. The default `rag` mode prints more — a `query:` line, an `understood as:` line, a per-song `similarity`, a generated `ANSWER` block — and it can change the picks, because the scorer only ever sees the shortlist retrieval hands it. On the Gemini path the pop profile returns these same three songs, with confidence shifted slightly by the similarity term (rank 3: 0.75 rather than 0.78). On the offline embedder it does not: rank 3 becomes `Sunday Morning` at 0.58 (medium), because the hashing fallback never puts `Run the World (Girls)` in the shortlist. That gap between backends is measured in [E12](#e12--retrieval-quality); the RAG path is shown end to end in [E9](#e9--the-rag-pipeline-offline).
+
 ### Example 1 — High-energy pop
 
 **Input:** `{"favorite_genre": "pop", "favorite_mood": "happy", "target_energy": 0.8}`
 
 ```
-$ python3 -m src.main --profile pop -k 3
+$ python3 -m src.main --mode classic --profile pop -k 3
 
 ====================================================================
   HIGH-ENERGY POP
@@ -135,7 +205,7 @@ Rank 3 is where the genre-over-mood weighting shows itself: a `pop`/`confident` 
 **Input:** `{"favorite_genre": "lofi", "favorite_mood": "chill", "target_energy": 0.3}`
 
 ```
-$ python3 -m src.main --profile lofi -k 3
+$ python3 -m src.main --mode classic --profile lofi -k 3
 
 ====================================================================
   CHILL LOFI
@@ -163,7 +233,7 @@ All three are full three-signal matches, and the top two are the same artist whi
 **Input:** `{"favorite_genre": "rock", "favorite_mood": "intense", "target_energy": 0.7}`
 
 ```
-$ python3 -m src.main --profile rock -k 3
+$ python3 -m src.main --mode classic --profile rock -k 3
 
 ====================================================================
   INTENSE ROCK
@@ -192,14 +262,14 @@ The low band never fires for any of the seven demo profiles — not for `metal`/
 
 ## Reproducible Execution Evidence
 
-Every block in this section is verbatim captured output from this repo — nothing is retyped or tidied. The system is deterministic (pure standard library, no model call, no network, no randomness), so re-running any command reproduces its block exactly, apart from the timestamps in `logs/run.log` and pytest's own timing line.
+Every block in this section is verbatim captured output from this repo — nothing is retyped or tidied. Every command here runs on a deterministic path: `--mode classic`, the offline embedder, or the template explainer, none of which makes a model call or touches the network. So re-running any command reproduces its block exactly, apart from the timestamps in `logs/run.log` and pytest's own timing line. The one thing this section cannot show reproducibly is Gemini's *wording*, which is why no block records it — see [What is and isn't deterministic now](#what-is-and-isnt-deterministic-now).
 
 Reading the blocks:
 
 - A line starting with `$` is the command; everything under it is that command's output.
 - `[exit N]` is `echo $?` immediately after the command. `0` = ran, `1` = a fatal condition handled cleanly.
 - Log output goes to **stderr**, program output to **stdout**. Blocks were captured with `2>&1`, so log lines may appear grouped ahead of the stdout they relate to; in a live terminal they interleave.
-- Captured on Python 3.8.17 (`python3 --version`), macOS, from the repo root.
+- Captured on Python 3.12.13 (`python3 --version`), macOS, from the repo root, inside the virtualenv from [Setup](#setup-instructions).
 
 ### E1 — Test suite
 
@@ -208,23 +278,28 @@ python3 -m pytest -q
 ```
 
 ```
-...............................................................          [100%]
-63 passed in 0.36s
+........................................................................ [ 31%]
+........................................................................ [ 62%]
+........................................................................ [ 93%]
+................                                                         [100%]
+232 passed in 14.11s
 [exit 0]
 ```
 
-63 tests across 5 files. The timing figure is the only part of this block that varies between runs.
+232 tests across 11 files. The timing figure is the only part of this block that varies between runs.
+
+A passing run also proves the suite is hermetic. `conftest.py` installs two autouse fixtures: one replaces `socket.connect`, `socket.connect_ex`, and `socket.create_connection` with a raiser, and one deletes `GEMINI_API_KEY` from the environment. So these tests cannot have reached the Gemini API, cannot have been billed, and produce identical results on a machine with a key and one without.
 
 ### E2 — Full demo run (all seven profiles)
 
 ```bash
-python3 -m src.main -k 5
+python3 -m src.main --mode classic -k 5
 ```
 
 This is the run behind every headline number in the [Testing Summary](#testing-summary). Full transcript is 213 lines; the first profile, one middle profile and the run report are shown, with the cuts marked.
 
 ```
-$ python3 -m src.main -k 5
+$ python3 -m src.main --mode classic -k 5
 
 Loaded 203 songs from data/songs.csv
 
@@ -256,7 +331,7 @@ Loaded 203 songs from data/songs.csv
 
 ====================================================================
 
-… (cut: CHILL LOFI, INTENSE ROCK — 56 lines)
+… (cut: CHILL LOFI, INTENSE ROCK — 57 lines)
 
 ====================================================================
   ANGRY METAL
@@ -286,18 +361,19 @@ Loaded 203 songs from data/songs.csv
 
 ====================================================================
 
-… (cut: DRIVEABLE CITY POP, HIGH-ENERGY JAZZ, CONFIDENT FUNK — 84 lines)
+… (cut: DRIVEABLE CITY POP, HIGH-ENERGY JAZZ, CONFIDENT FUNK — 85 lines)
 
 --------------------------------------------------------------------
   RUN REPORT
 --------------------------------------------------------------------
+  mode                  : classic
   queries served        : 7
   recommendations made  : 35
   average confidence    : 0.88
   low-confidence picks  : 0/35
   claims made / dropped : 105 / 0
-  grounding rate        : 1.00
   explanations withheld : 0
+  grounding rate        : 1.00
   full log              : logs/run.log
 --------------------------------------------------------------------
 
@@ -309,11 +385,11 @@ Note ranks 3–5 of the pop block: three genre-only picks whose mood misses, eve
 ### E3 — Pipeline narrating itself
 
 ```bash
-python3 -m src.main --profile lofi -k 3 --log-level INFO
+python3 -m src.main --mode classic --profile lofi -k 3 --log-level INFO
 ```
 
 ```
-$ python3 -m src.main --profile lofi -k 3 --log-level INFO
+$ python3 -m src.main --mode classic --profile lofi -k 3 --log-level INFO
 [INFO] music_rec.recommender: Loading catalog from data/songs.csv
 [INFO] music_rec.recommender: Loaded 203 song(s), skipped 0
 [INFO] music_rec.retriever: Retriever ready: 203 songs from data/songs.csv across 19 genre(s)
@@ -345,13 +421,14 @@ Loaded 203 songs from data/songs.csv
 --------------------------------------------------------------------
   RUN REPORT
 --------------------------------------------------------------------
+  mode                  : classic
   queries served        : 1
   recommendations made  : 3
   average confidence    : 0.97
   low-confidence picks  : 0/3
   claims made / dropped : 9 / 0
-  grounding rate        : 1.00
   explanations withheld : 0
+  grounding rate        : 1.00
   full log              : logs/run.log
 --------------------------------------------------------------------
 
@@ -363,17 +440,17 @@ Loaded 203 songs from data/songs.csv
 The console shows warnings only by default; the file always gets everything, including the per-rank scoring trace.
 
 ```bash
-rm -f logs/run.log && python3 -m src.main --profile metal -k 2 > /dev/null && cat logs/run.log
+rm -f logs/run.log && python3 -m src.main --mode classic --profile metal -k 2 > /dev/null && cat logs/run.log
 ```
 
 ```
-2026-08-02 23:37:58,140 INFO     music_rec.recommender | Loading catalog from data/songs.csv
-2026-08-02 23:37:58,143 INFO     music_rec.recommender | Loaded 203 song(s), skipped 0
-2026-08-02 23:37:58,143 INFO     music_rec.retriever | Retriever ready: 203 songs from data/songs.csv across 19 genre(s)
-2026-08-02 23:37:58,144 INFO     music_rec.retriever | Query: genre=metal mood=angry target_energy=0.90 k=2
-2026-08-02 23:37:58,147 DEBUG    music_rec.retriever |   #1 Angel of Death (metal) score=3.88 confidence=0.98 band=high
-2026-08-02 23:37:58,147 DEBUG    music_rec.retriever |   #2 Master of Puppets (metal) score=3.86 confidence=0.98 band=high
-2026-08-02 23:37:58,147 INFO     music_rec.main | Run complete: 2 recommendation(s), avg confidence 0.980, grounding rate 1.000
+2026-08-03 19:50:44,947 INFO     music_rec.recommender | Loading catalog from data/songs.csv
+2026-08-03 19:50:44,949 INFO     music_rec.recommender | Loaded 203 song(s), skipped 0
+2026-08-03 19:50:44,949 INFO     music_rec.retriever | Retriever ready: 203 songs from data/songs.csv across 19 genre(s)
+2026-08-03 19:50:44,949 INFO     music_rec.retriever | Query: genre=metal mood=angry target_energy=0.90 k=2
+2026-08-03 19:50:44,951 DEBUG    music_rec.retriever |   #1 Angel of Death (metal) score=3.88 confidence=0.98 band=high
+2026-08-03 19:50:44,951 DEBUG    music_rec.retriever |   #2 Master of Puppets (metal) score=3.86 confidence=0.98 band=high
+2026-08-03 19:50:44,951 INFO     music_rec.main | Run complete: 2 recommendation(s), avg confidence 0.980, grounding rate 1.000
 ```
 
 Timestamps are the only non-reproducible values anywhere in this section.
@@ -515,11 +592,11 @@ Two readings of the same run. First, a single mood match plus a decent energy fi
 **G1 — malformed rows are skipped, not fatal.** `data/broken.csv` holds 6 rows: an out-of-range energy, a row missing artist and mood, an unparseable energy value, and 3 good rows.
 
 ```bash
-python3 -m src.main --catalog data/broken.csv --profile pop -k 3
+python3 -m src.main --mode classic --catalog data/broken.csv --profile pop -k 3
 ```
 
 ```
-$ python3 -m src.main --catalog data/broken.csv --profile pop -k 3
+$ python3 -m src.main --mode classic --catalog data/broken.csv --profile pop -k 3
 [WARNING] music_rec.guardrails: data/broken.csv: skipped 3 malformed row(s); first: line 5: energy=9.9 is outside the 0.0-1.0 range
 
 Loaded 3 songs from data/broken.csv
@@ -547,13 +624,14 @@ Loaded 3 songs from data/broken.csv
 --------------------------------------------------------------------
   RUN REPORT
 --------------------------------------------------------------------
+  mode                  : classic
   queries served        : 1
   recommendations made  : 3
   average confidence    : 0.53
   low-confidence picks  : 2/3
   claims made / dropped : 9 / 0
-  grounding rate        : 1.00
   explanations withheld : 0
+  grounding rate        : 1.00
   full log              : logs/run.log
 --------------------------------------------------------------------
 
@@ -714,6 +792,202 @@ The system never says "polka". The unsupported claim is dropped and the sentence
 
 No failure path produces a traceback; every one prints a single line naming what went wrong.
 
+### E9 — The RAG pipeline, offline
+
+Retrieval is the in-memory hashing embedder; generation is the template explainer. The flags force that path so the block is reproducible with or without a key — with no key set, plain `--profile "city pop" -k 3 --show-chunks` reaches the same place on its own, after a warning that the committed Gemini index cannot serve an offline query.
+
+```bash
+python3 -m src.main --profile "city pop" -k 3 --show-chunks --embedder offline --generator template
+```
+
+```
+====================================================================
+  DRIVEABLE CITY POP
+  query: "nostalgic city pop for a late night drive"
+  understood as: genre=city pop · mood=nostalgic · energy=0.45
+  average confidence: 0.79
+====================================================================
+
+  retrieved context:
+    +0.129  [listening_contexts:late-night-driving:0] Late-night driving
+    +0.124  [genres:city-pop:0] City pop
+    +0.123  [genres:folk:1] Folk
+
+  1. Mayonaka no Door~stay with me  —  Miki Matsubara
+     score 3.50 · confidence 0.79 (high) · similarity 0.117
+
+  2. Plastic Love  —  Mariya Takeuchi
+     score 3.42 · confidence 0.78 (high) · similarity 0.124
+
+  3. Fly-Day Chinatown  —  Nanako Sato
+     score 3.46 · confidence 0.79 (high) · similarity 0.117
+
+… (cut: the template ANSWER block and the run report — 37 lines)
+```
+
+Three things are worth reading off this. The free-text query was resolved to a structured profile with no model call. Retrieval surfaced the *late-night driving* context passage, not just the genre one — the prose knowledge base is doing real work. And the top passage similarities (`0.129`, `0.124`) exceed the song-card ones (`0.117`) because prose chunks share more vocabulary with a conversational query than a templated card does; that asymmetry is exactly why retrieval is stratified by kind rather than run as a single top-k.
+
+The third passage, `genres:folk:1`, is a genuine miss — the lexical fallback matching on shared words like "unhurried" and "drives". Gemini embeddings do not make that mistake: the same command with a key and the committed index retrieves `genres:city-pop:1`, `listening_contexts:late-night-driving:0` and `genres:city-pop:0` at similarities of 0.806 / 0.771 / 0.755, against 0.117–0.129 offline. The songs are the same three; the *evidence* behind them is not. That block is not recorded here because its generated prose is not reproducible.
+
+### E10 — The grounding guardrail catching a misbehaving model
+
+`BrokenGenerator` ([src/llm_client.py](src/llm_client.py)) deliberately produces what a real model can produce on a bad day. Both cases are run against a real retrieved record, on the offline embedder so the record is reproducible.
+
+```bash
+python3 - <<'PY'
+from src.answerer import AnswerAgent
+from src.corpus import build_corpus, corpus_fingerprint
+from src.embeddings import HashingEmbedder
+from src.llm_client import BrokenGenerator
+from src.logging_setup import configure_logging
+from src.retriever import Retriever, SemanticRetriever
+from src.vector_store import VectorStore
+configure_logging(console_level="ERROR")
+
+QUERY = "nostalgic city pop for a late night drive"
+retriever = Retriever.from_csv("data/songs.csv")
+embedder = HashingEmbedder()
+chunks = build_corpus("data/songs.csv", "docs/kb")
+store = VectorStore.build(chunks, embedder, corpus_fingerprint(chunks))
+records, prose, prefs = SemanticRetriever(retriever, store, embedder).retrieve(QUERY, k=1)
+titles = [s["title"] for s in retriever.songs]
+
+for label, gen in [("fabricated citation", BrokenGenerator()),
+                   ("substituted song", BrokenGenerator("Master of Puppets"))]:
+    agent = AnswerAgent(generator=gen)
+    answer = agent.answer(QUERY, prose, records, prefs, catalog_titles=titles)
+    stats = agent.stats
+    print(f"-- {label} --")
+    print("  model wrote :", gen.generate(""))
+    print(f"  verdict     : withheld={stats['withheld']} "
+          f"fabricated={stats['fabricated_citations']} "
+          f"substituted={stats['substituted_titles']} fell_back={answer.fell_back}")
+    print("  shown       :", answer.text[:75] + "...")
+PY
+```
+
+```
+[ERROR] music_rec.guardrails: Dropping sentence citing unretrieved chunk(s) song:9999: 'This song is a great pick for you [song:9999].'
+[ERROR] music_rec.guardrails: Withholding generated answer: only 0/2 sentences were cited (minimum ratio 0.6)
+[ERROR] music_rec.guardrails: Withholding generated answer: answer named song(s) the ranker did not select: Master of Puppets
+-- fabricated citation --
+  model wrote : This song is a great pick for you [song:9999]. It has excellent vibes.
+  verdict     : withheld=1 fabricated=1 substituted=0 fell_back=True
+  shown       : Mayonaka no Door~stay with me — Strong match (confidence 0.79): recommended...
+
+-- substituted song --
+  model wrote : Strong match: you should listen to "Master of Puppets", which is a perfect fit [song:9999].
+  verdict     : withheld=1 fabricated=0 substituted=1 fell_back=True
+  shown       : Mayonaka no Door~stay with me — Strong match (confidence 0.79): recommended...
+[exit 0]
+```
+
+The three log lines are the decisions themselves: the fabricated citation costs that sentence, which then leaves too few cited sentences to keep the answer at all, and the substitution is refused outright.
+
+The two failures are treated differently on purpose. A fabricated citation drops *that sentence* — one bad provenance marker does not necessarily poison the rest. A substituted song withholds the *entire answer*, because the deterministic ranker choosing the recommendations is the system's central claim, and a model quietly swapping one in is precisely the thing that must not be salvageable by editing a sentence. In both cases the user still gets a correct, grounded explanation from the template fallback rather than an error.
+
+### E11 — Cache invalidation
+
+One row appended to `data/songs.csv`, nothing else changed:
+
+```bash
+python3 -m src.ingest --check
+```
+
+```
+STALE: data/index/gemini_index.jsonl was built from a different corpus.
+  index fingerprint : 120cd06939e8b095... (277 vectors)
+  corpus fingerprint: 9c9b4a435a02bbf8... (278 chunks)
+  Rebuild with: python3 -m src.ingest
+[exit 1]
+```
+
+`python3 -m src.main` in the same state prints a warning naming the drift and **falls back to the offline embedder** rather than querying a stale index. It deliberately does not rebuild automatically: silently triggering paid API calls as a side effect of editing a CSV is a worse failure than a loud warning.
+
+The fingerprint covers chunk ids, chunk text, *and* the prefix-scheme version. That last part matters — changing `QUERY_PREFIX` alters what gets embedded without altering any chunk's text, and would otherwise leave a subtly mismatched index looking fresh.
+
+Against the committed index, `--check` reports the healthy case:
+
+```bash
+python3 -m src.ingest --check
+```
+
+```
+[INFO] music_rec.recommender: Loading catalog from data/songs.csv
+[INFO] music_rec.recommender: Loaded 203 song(s), skipped 0
+[INFO] music_rec.corpus: Corpus: 203 song card(s) + 74 prose chunk(s) = 277 total
+OK: data/index/gemini_index.jsonl matches the corpus (277 vectors, gemini-embedding-2@768)
+[exit 0]
+```
+
+### E12 — Retrieval quality
+
+The two-stage design depends on exactly one property: **the requested genre has to appear in the 20-song shortlist**, because the reranker can only reorder what retrieval hands it. This is the measurement of that property, on the offline embedder — the weaker of the two backends, so it is a floor rather than a best case.
+
+```bash
+python3 - <<'PY'
+from src.corpus import build_corpus, corpus_fingerprint
+from src.embeddings import HashingEmbedder
+from src.logging_setup import configure_logging
+from src.main import PROFILES
+from src.recommender import load_songs
+from src.vector_store import VectorStore
+configure_logging(console_level="CRITICAL")
+
+songs = load_songs("data/songs.csv")
+chunks = build_corpus("data/songs.csv", "docs/kb")
+embedder = HashingEmbedder()
+store = VectorStore.build(chunks, embedder, corpus_fingerprint(chunks))
+by_id = {s["id"]: s for s in songs}
+
+def shortlist(query):
+    hits, _ = store.search_stratified(embedder.embed_query(query), k_songs=20, k_prose=3)
+    return [by_id[h.chunk.metadata["song_id"]] for h in hits
+            if h.chunk.metadata.get("song_id") in by_id]
+
+genres = sorted({s["genre"] for s in songs})
+recall = sum(1 for g in genres if any(s["genre"] == g for s in shortlist(f"{g} music")))
+top1 = sum(1 for g in genres if shortlist(f"{g} music")[0]["genre"] == g)
+demo = sum(1 for p in PROFILES.values()
+           if any(s["genre"] == p["prefs"]["favorite_genre"] for s in shortlist(p["query"])))
+
+print(f"recall@20, one query per genre : {recall}/{len(genres)}")
+print(f"recall@20, seven demo queries  : {demo}/{len(PROFILES)}")
+print(f"top-1 by genre                 : {top1}/{len(genres)}")
+PY
+```
+
+```
+recall@20, one query per genre : 19/19
+recall@20, seven demo queries  : 7/7
+top-1 by genre                 : 14/19
+[exit 0]
+```
+
+Recall is perfect and top-1 is not, which is the intended shape. Top-1 is *deliberately* not optimised: the reranker decides the final order, so retrieval only has to get the right songs into the room, and 5 lexical confusions in the lead position cost nothing downstream.
+
+Swapping `HashingEmbedder()` for `GeminiEmbedder()` and `VectorStore.build(...)` for `VectorStore.load("data/index/gemini_index.jsonl")` runs the same measurement against the committed index. That scores **19/19 recall and 19/19 top-1** — it costs 19 embedding calls and its exact figures depend on a model alias that moves, which is why the reproducible block above is the offline one. The gap between 14/19 and 19/19 is the concrete value of setting a key.
+
+---
+
+## Cost, latency, and what's committed
+
+The vector index at `data/index/gemini_index.jsonl` **is committed**, which is an unusual choice for a generated artifact and a deliberate one.
+
+| | Cost |
+|---|---|
+| Fresh clone, offline | Zero. Index built in memory in ~50 ms |
+| Fresh clone, with a key and a committed index | Zero to set up |
+| Building the index | 277 embedding calls, **once** |
+| One query, thereafter | **1 embedding call + 1 generation call** |
+| Re-ingest | Only when `data/songs.csv` or `docs/kb/` changes |
+
+Separating ingest from query is what keeps the per-question cost at one embedding call. Without it, every query would re-embed the whole corpus — 277 calls per question instead of one. Committing the result extends that saving to anyone who clones the repo.
+
+The trade is a 2.3 MB generated file in git and a large diff whenever ingest re-runs. For a project whose point is that a grader can clone it and see real retrieval work without setting up billing, that is the right side of the trade.
+
+**Why there is no numpy.** Retrieval is 277 chunks × 768 dimensions ≈ 210,000 multiply-adds per query, measured at 20–30 ms in pure Python — invisible next to a ~300 ms network round trip. numpy would add a 15 MB wheel and a platform-specific install failure mode to save time that is not on the critical path, and would replace a legible loop in [src/vector_store.py](src/vector_store.py) with an opaque one. The measurement is the reason, not the aesthetic.
+
 ---
 
 ## Design Decisions
@@ -735,13 +1009,13 @@ No failure path produces a traceback; every one prints a single line naming what
 | Reasons built during scoring, not after | Explanations can't drift from the score that produced them | Reason wording is coupled to the scoring function |
 | Dict-based functional pipeline for the CLI | Direct CSV→dict flow, easy to test | Duplicates the `Song`/`UserProfile`/`Recommender` dataclass API, which remains as scaffolding |
 
-**Why `tempo_bpm` is excluded.** It ranges 60–168, not 0–1. Dropping it into the same closeness formula without min-max scaling would let it swamp every other signal. Excluding it was cheaper than scaling it correctly for v1.
+**Why `tempo_bpm` is excluded.** It ranges 54–200 across the catalog, not 0–1. Dropping it into the same closeness formula without min-max scaling would let it swamp every other signal. Excluding it was cheaper than scaling it correctly for v1.
 
 ---
 
 ## Testing Summary
 
-**The short version:** 63 of 63 automated tests pass. Across the seven demo profiles the system made 35 recommendations with an average confidence of **0.88**, flagging **0 of 35** as low-confidence. All **105 generated claims were grounded** in retrieved data (grounding rate 1.00, 0 explanations withheld). Fault injection confirmed the guardrails: a catalog with 3 corrupt rows loaded the 3 good ones and skipped the rest, and an artificially desynchronised record had its unsupported claim dropped rather than printed. The biggest problem is still the confidence layer: **15 of those 35 picks were genre-only matches that missed the requested mood, and not one was flagged** — and it takes a genre *and* a mood the catalog does not contain before the low band fires at all.
+**The short version:** 232 of 232 automated tests pass. Across the seven demo profiles the system made 35 recommendations with an average confidence of **0.88**, flagging **0 of 35** as low-confidence. All **105 generated claims were grounded** in retrieved data (grounding rate 1.00, 0 explanations withheld). Fault injection confirmed the guardrails: a catalog with 3 corrupt rows loaded the 3 good ones and skipped the rest, and an artificially desynchronised record had its unsupported claim dropped rather than printed. The biggest problem is still the confidence layer: **15 of those 35 picks were genre-only matches that missed the requested mood, and not one was flagged** — and it takes a genre *and* a mood the catalog does not contain before the low band fires at all.
 
 Every figure in this section is reproduced by a command in [Reproducible Execution Evidence](#reproducible-execution-evidence): the test count in [E1](#e1--test-suite), the 35/0.88/105/1.00 run figures in [E2](#e2--full-demo-run-all-seven-profiles) and [E5](#e5--reliability-sweep-across-all-seven-profiles), the band behaviour in [E6](#e6--uncovered-genre-polka), and the fault injections in [E7](#e7--guardrail-results).
 
@@ -751,9 +1025,15 @@ Every figure in this section is reproduced by a command in [Reproducible Executi
 |---|---|---|---|
 | Scoring & ranking | [tests/test_recommender.py](tests/test_recommender.py) | 10 | The weight invariants (genre > mood; weights sum to `MAX_SCORE`), exact score values, descending order, `k`, the empty-reasons fallback, CSV typing |
 | Guardrails | [tests/test_guardrails.py](tests/test_guardrails.py) | 14 | Bad rows rejected, bad profiles rejected, energy clamping, grounding check |
-| Retrieval & confidence | [tests/test_retriever.py](tests/test_retriever.py) | 16 | Catalog failures, ranking, confidence bounds/ordering/bands |
+| Retrieval & confidence | [tests/test_retriever.py](tests/test_retriever.py) | 40 | Catalog failures, ranking, confidence bounds/ordering/bands, `extract_prefs`, the semantic path, blended ordering |
 | Explanation grounding | [tests/test_explainer.py](tests/test_explainer.py) | 9 | Wording tracks evidence, ungrounded claims dropped, explanations withheld, no genre leaks across every demo profile |
-| End-to-end CLI | [tests/test_main.py](tests/test_main.py) | 14 | Full pipeline runs, every demo profile runs alone and is covered by the catalog, reliability report prints, clean failure + exit code 1 |
+| Chunking | [tests/test_chunking.py](tests/test_chunking.py) | 17 | Heading boundaries, overlap that never crosses one, the hard-max invariant, runt merging, determinism |
+| Corpus & fingerprint | [tests/test_corpus.py](tests/test_corpus.py) | 32 | Song-card rendering keeps every number verbatim, KB assembly, fingerprint invalidation |
+| Embedding backends | [tests/test_embeddings.py](tests/test_embeddings.py) | 29 | One vector per chunk, the `types.Content` footgun, prefix application, rate-limit retry, IDF hashing |
+| Vector store | [tests/test_vector_store.py](tests/test_vector_store.py) | 27 | Cosine, top-k ordering, stratified retrieval, JSONL round-trip, staleness detection |
+| Prompting & grounding | [tests/test_answerer.py](tests/test_answerer.py) | 23 | Prompt fences the song list, fabricated citations dropped, substituted songs withheld, template fallback |
+| Ingest CLI | [tests/test_ingest.py](tests/test_ingest.py) | 9 | `--check` and `--dry-run` contracts, exit codes, that ingest is the only index writer |
+| End-to-end CLI | [tests/test_main.py](tests/test_main.py) | 22 | Full pipeline runs in both modes, every demo profile runs alone and is covered by the catalog, reliability report prints, clean failure + exit code 1 |
 
 Three independent reliability mechanisms, not one:
 
@@ -819,7 +1099,16 @@ The profile expansion taught a narrower version of the same thing. Four new prof
 - **No diversity control** — nothing prevents the top-5 from being the same artist repeatedly.
 - **Single-preference profiles** — a listener with genuinely mixed taste cannot be expressed.
 - **Self-reported confidence** — the confidence score is derived from the same weights it rates, so it measures internal consistency, not correctness. It cannot flag a recommendation that the scoring policy itself gets wrong.
-- **Template-based explanations** — deterministic and fully auditable, but the phrasing is fixed. It explains *why the score came out that way*, which is not the same as musical insight.
+
+### Risks introduced by adding RAG
+
+- **Non-deterministic wording** — explanations are no longer byte-reproducible when Gemini is enabled. Song selection still is. See [What is and isn't deterministic now](#what-is-and-isnt-deterministic-now).
+- **Hallucination surface** — a language model can now fabricate. The guardrails catch citation fabrication and song substitution ([E10](#e10--the-grounding-guardrail-catching-a-misbehaving-model)), but they check *provenance*, not truth: a sentence that cites a real passage and misdescribes it would pass. Constraining the model to two sentences per song limits the room for this, but does not eliminate it.
+- **Prose knowledge base authorship bias** — ~7,200 words of one person's characterisations of 19 genres and 13 moods now steer retrieval. Writing that reggae suits "sunshine and cooking" is an opinion, and it is now load-bearing infrastructure. This is a genuinely new fairness surface and the most under-examined part of the system.
+- **Embedding model bias** — `gemini-embedding-2` was trained on internet text, which is English-centric and popularity-weighted. A genre that is well documented online embeds more usefully than one that is not, so the retrieval quality of city pop and lofi is unlikely to match that of, say, a regional tradition with a thin web footprint.
+- **API cost and availability** — the system now has an external dependency that can be rate-limited, deprecated, or billed. The offline path exists so that none of those are fatal.
+- **Moving model ids** — `gemini-flash-lite-latest` is an alias that tracks upstream. Recorded outputs in this README are dated, and a future run may differ for reasons outside this repository.
+- **`extract_prefs` is heuristic** — vocabulary matching with a synonym map and negation handling. It handles the demo queries and much conversational phrasing, but it is not a parser. Its failures are bounded: it only affects reranking, never retrieval, so the worst case is a slightly worse ordering within an already-relevant shortlist.
 
 Full analysis, including responsible-AI reflection and where bias enters: [model_card.md](model_card.md).
 
@@ -830,28 +1119,52 @@ Full analysis, including responsible-AI reflection and where bias enters: [model
 ```
 ├── src/
 │   ├── main.py            # CLI runner: argparse, demo profiles, run report
-│   ├── retriever.py       # Retriever: knowledge base + top-k retrieval with evidence
-│   ├── explainer.py       # ExplanationAgent: grounded generation from retrieved records
+│   ├── ingest.py          # build-time CLI: the only writer of the vector index
+│   ├── config.py          # every tunable: model ids, dims, paths, chunk sizes, weights
+│   ├── corpus.py          # song-card rendering, KB assembly, corpus fingerprint
+│   ├── chunking.py        # chunk_text: heading-aware splitting with overlap
+│   ├── embeddings.py      # Embedder ABC, GeminiEmbedder, offline HashingEmbedder
+│   ├── vector_store.py    # cosine top-k, stratified retrieval, JSONL persistence
+│   ├── retriever.py       # Retriever + SemanticRetriever + extract_prefs
+│   ├── llm_client.py      # GeminiGenerator, TemplateGenerator, test doubles
+│   ├── answerer.py        # AnswerAgent: prompt building, grounding, fallback
+│   ├── explainer.py       # ExplanationAgent: deterministic template backend
 │   ├── recommender.py     # scoring/ranking core + load_songs + OOP facade
-│   ├── guardrails.py      # row/profile validation, grounding checks, error types
-│   ├── models.py          # Song, UserProfile, SignalMatch, RetrievedSong, confidence
+│   ├── guardrails.py      # row/profile/query validation, grounding checks, errors
+│   ├── models.py          # Chunk, RetrievedSong, SignalMatch, confidence
 │   └── logging_setup.py   # console + logs/run.log configuration
-├── data/songs.csv         # 203-song catalog, 19 genres, 10 fields per song
+├── data/
+│   ├── songs.csv          # 203-song catalog, 19 genres, 10 fields per song
+│   └── index/gemini_index.jsonl   # committed vectors, 277 chunks (see Cost)
+├── docs/
+│   ├── kb/                # the prose knowledge base, ~7,200 words
+│   │   ├── genres.md      # all 19 catalog genres
+│   │   ├── moods.md       # all 13 catalog moods
+│   │   ├── eras.md        # seven periods and scenes
+│   │   └── listening_contexts.md   # ten situations people actually ask about
+│   ├── algorithm_recipe.md    # Phase 2 scoring design (code-free, superseded)
+│   └── retrieval_recipe.md    # chunking, prefixes, blending (code-free)
 ├── tests/
 │   ├── test_recommender.py    # scoring + ranking math
 │   ├── test_guardrails.py     # validation and grounding
-│   ├── test_retriever.py      # catalog failures, ranking, confidence
+│   ├── test_retriever.py      # catalog failures, ranking, confidence, semantic path
 │   ├── test_explainer.py      # grounded generation, dropped claims
-│   └── test_main.py           # end-to-end CLI
-├── docs/algorithm_recipe.md   # Phase 2 scoring design (code-free, superseded)
+│   ├── test_chunking.py       # boundaries, overlap, determinism
+│   ├── test_embeddings.py     # one-vector-per-chunk, the types.Content footgun
+│   ├── test_vector_store.py   # cosine, top-k ordering, persistence, freshness
+│   ├── test_corpus.py         # card rendering, fingerprint invalidation
+│   ├── test_answerer.py       # prompt building and the grounding guardrail
+│   ├── test_ingest.py         # --check / --dry-run contracts
+│   └── test_main.py           # end-to-end CLI, both modes
 ├── diagrams/
 │   ├── uml.mmd            # class diagram
 │   └── architecture.mmd   # system flow diagram
-├── conftest.py            # puts the repo root on sys.path for pytest
-└── model_card.md          # intended use, data, limitations, reflection
+├── conftest.py            # sys.path + autouse fixtures blocking network and key
+├── .env.example           # GEMINI_API_KEY placeholder (.env is gitignored)
+└── model_card.md          # intended use, models used, data, limitations, reflection
 ```
 
-Data flows one way: `main -> retriever -> (recommender core) -> explainer -> output`, with `guardrails` and `logging_setup` used at every stage. `models.py` imports no project code, so the dependency graph stays acyclic.
+Data flows one way. At build time: `ingest -> corpus -> chunking -> embeddings -> vector_store`. At query time: `main -> retriever (embeddings + vector_store + recommender core) -> answerer -> llm_client -> output`, with `guardrails` and `logging_setup` used at every stage. `config.py` imports no project code and `models.py` imports only `config`, so the dependency graph stays acyclic.
 
 ---
 

@@ -1,47 +1,74 @@
 flowchart TD
 
-    %% ---------- INPUT ----------
-    U["User<br/>taste profile: genre, mood, target_energy"]
+    %% ==========================================================
+    %% BUILD TIME - runs once, via `python3 -m src.ingest`
+    %% ==========================================================
+    subgraph INGEST["INGEST · build time · src/ingest.py"]
+        CSV[("data/songs.csv<br/>203 rows")]
+        KBD[("docs/kb/*.md<br/>~7,200 words of prose")]
+        CARD["render_song_card()<br/>row -> natural language<br/>keeps every number verbatim"]
+        CHUNK["chunk_text()<br/>split on ## headings<br/>~900 chars, 150 overlap<br/>overlap never crosses a heading"]
+        EMB1["Embedder.embed_documents()<br/>gemini-embedding-2 @ 768<br/>one types.Content per chunk"]
+        IDX[("data/index/gemini_index.jsonl<br/>277 vectors · committed<br/>header carries the fingerprint")]
+        CSV --> CARD --> EMB1
+        KBD --> CHUNK --> EMB1
+        EMB1 --> IDX
+    end
+
+    %% ==========================================================
+    %% QUERY TIME - runs per question
+    %% ==========================================================
+    U["User<br/>natural-language request<br/>'nostalgic city pop for a late night drive'"]
     CLI["CLI Runner<br/>src/main.py"]
     U --> CLI
 
-    %% ---------- RETRIEVAL (the R in RAG) ----------
-    subgraph RET["Retriever · src/retriever.py"]
-        KB[("Music Knowledge Base<br/>data/songs.csv")]
-        LOAD["load_songs()<br/>parse · type-cast · validate rows"]
-        EVAL["evaluate_song()<br/>genre +1.5 · mood +0.5 · energy x2.0<br/>genre outranks mood 3:1<br/>emits a SignalMatch per signal"]
-        RANK["rank_songs()<br/>sort by score, cut to top-k"]
-        CONF["compute_confidence()<br/>0.6 x score + 0.4 x signal coverage<br/>band: high / medium / low"]
-        KB --> LOAD --> EVAL --> RANK --> CONF
+    subgraph RET["RETRIEVAL · src/retriever.py + src/vector_store.py"]
+        QV["embed_query()<br/>1 API call"]
+        TOPK["search_stratified()<br/>cosine top-k, by kind<br/>20 song cards + 3 prose"]
+        PREFS["extract_prefs()<br/>longest-match genre/mood<br/>synonyms · energy hints · negation<br/>NO model call"]
+        EVAL["evaluate_song()<br/>genre +1.5 · mood +0.5 · energy x2.0<br/>reranks the shortlist"]
+        CONF["compute_confidence()<br/>base = 0.6 x score + 0.4 x coverage<br/>semantic path: 0.7 x base + 0.3 x similarity<br/>offline path: base alone (see OFF)<br/>band: high / medium / low"]
+        QV --> TOPK --> PREFS --> EVAL --> CONF
     end
-    CLI -- "query: user_prefs, k" --> LOAD
+    CLI -- "query, k" --> QV
+    IDX -. "loaded if fingerprint matches" .-> TOPK
 
-    %% ---------- AUGMENTED GENERATION ----------
-    subgraph GEN["Explanation Agent · src/explainer.py"]
-        CTX["RetrievedSong<br/>song + score + signals + confidence"]
-        CLAIM["build claims<br/>one per signal, hit or miss"]
-        CHECK{"is_claim_grounded()<br/>supported by the record?"}
-        PROSE["render prose<br/>wording constrained by band"]
-        CTX --> CLAIM --> CHECK
-        CHECK -- "yes" --> PROSE
+    subgraph GEN["GENERATION · src/answerer.py + src/llm_client.py"]
+        PROMPT["build_prompt()<br/>passages + query + fixed song list<br/>'do NOT add, drop, or substitute'"]
+        LLM["GeminiGenerator<br/>gemini-flash-lite-latest"]
+        CHECK{"check_generated_answer()<br/>citation valid? song substituted?<br/>enough sentences cited?"}
+        PROSE["grounded prose<br/>every fact cites its passage"]
+        PROMPT --> LLM --> CHECK
+        CHECK -- "passes" --> PROSE
     end
-    CONF -- "top-k + evidence" --> CTX
+    CONF -- "top-k records" --> PROMPT
+    TOPK -- "prose passages" --> PROMPT
+
+    %% ---------- OFFLINE FALLBACKS ----------
+    subgraph OFF["OFFLINE PATH · no API key, no network"]
+        HASH["HashingEmbedder<br/>IDF-weighted feature hashing<br/>deterministic · built in memory<br/>contributes_confidence = False<br/>so bands never move offline"]
+        TMPL["ExplanationAgent<br/>template prose from SignalMatches<br/>deterministic"]
+    end
+    HASH -. "substitutes for" .-> QV
+    TMPL -. "substitutes for" .-> LLM
+    CHECK -- "withheld: falls back" --> TMPL
 
     %% ---------- GUARDRAILS ----------
-    GUARD["Guardrails & Logging<br/>src/guardrails.py · src/logging_setup.py<br/>skip malformed rows · reject/clamp bad profiles<br/>drop ungrounded claims · logs/run.log"]
-    LOAD -.-> GUARD
-    RANK -.-> GUARD
-    CHECK -- "no: drop claim<br/>(withhold if none survive)" --> GUARD
+    GUARD["Guardrails & Logging<br/>src/guardrails.py · src/logging_setup.py<br/>skip malformed rows · reject/clamp bad profiles<br/>reject empty queries · drop fabricated citations<br/>withhold substituted songs · logs/run.log"]
+    CARD -.-> GUARD
+    PREFS -.-> GUARD
+    CHECK -- "fabricated citation: drop sentence<br/>substituted song: withhold ALL" --> GUARD
 
     %% ---------- OUTPUT ----------
     OUT["Ranked recommendations<br/>+ grounded explanation + confidence<br/>+ run reliability report"]
     PROSE --> OUT
+    TMPL --> OUT
     OUT --> U
 
     %% ---------- VERIFICATION ----------
     subgraph EVALS["Evaluation & Human Check"]
-        TEST["Automated Tester · 63 tests<br/>scoring · guardrails · confidence<br/>grounding · end-to-end CLI"]
-        HUMAN["Human Review<br/>seven contrasting profiles:<br/>are picks, confidence + caveats sensible?"]
+        TEST["Automated Tester · 232 tests<br/>chunking · embedding · retrieval<br/>grounding · ingest · end-to-end CLI<br/>network blocked by conftest fixtures"]
+        HUMAN["Human Review<br/>seven contrasting queries:<br/>are picks, confidence + caveats sensible?"]
     end
     OUT --> TEST
     OUT --> HUMAN
@@ -52,6 +79,8 @@ flowchart TD
     classDef store fill:#e8eaf6,stroke:#3f51b5
     classDef check fill:#e8f5e9,stroke:#2e7d32
     classDef guard fill:#fff8e1,stroke:#f9a825
-    class KB store
+    classDef offline fill:#f3e5f5,stroke:#7b1fa2
+    class CSV,KBD,IDX store
     class TEST,HUMAN check
     class GUARD guard
+    class HASH,TMPL offline

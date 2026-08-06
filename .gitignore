@@ -16,3 +16,11 @@ venv/
 
 # Run logs
 logs/
+
+# Secrets - never commit the real key. .env.example is committed instead.
+.env
+
+# The offline hashing index is rebuilt in memory on every run (~50ms), so it is
+# never committed. data/index/gemini_index.jsonl IS committed on purpose - see
+# README "Cost, latency, and what's committed".
+data/index/offline_index.jsonl
