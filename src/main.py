@@ -48,7 +48,14 @@ from src.explainer import ExplanationAgent
 from src.guardrails import CatalogError, ProfileError, QueryError
 from src.llm_client import GenerationUnavailable, TemplateGenerator, make_generator
 from src.logging_setup import configure_logging, get_logger
-from src.models import BAND_LOW
+from src.models import (
+    BAND_HIGH,
+    BAND_LOW,
+    BAND_MEDIUM,
+    HIGH_THRESHOLD,
+    MAX_SCORE,
+    MEDIUM_THRESHOLD,
+)
 from src.retriever import DEFAULT_CATALOG, Retriever, SemanticRetriever
 from src.vector_store import IndexUnavailableError, VectorStore
 
@@ -379,6 +386,81 @@ def print_rag_result(label, query, prefs, records, prose, answer,
 
     print()
     print("=" * WIDTH)
+
+
+def print_why(record, rank: int, embedder=None) -> None:
+    """
+    Renders the full scoring evidence for one recommendation.
+
+    Nothing here is computed: every number already exists on the record by the
+    time it is printed once. `print_rag_result` shows five fields of a
+    RetrievedSong that carries a dozen — this is the rest of them, for a
+    listener who wants to argue with a pick rather than take it on faith.
+    """
+    song = record.song
+    print()
+    print("=" * WIDTH)
+    print(f"  WHY #{rank}: {song['title']} — {song['artist']}")
+    print(f"  {song['genre']} · {song['mood']} · energy {song['energy']:.2f} · {song['tempo_bpm']} bpm")
+    print("=" * WIDTH)
+
+    print()
+    print("  signal    points        song value vs target")
+    print("  " + "-" * (WIDTH - 4))
+    for signal in record.breakdown.signals:
+        song_value = _format_signal_value(signal.song_value)
+        target_value = _format_signal_value(signal.target_value)
+        print(
+            f"  {signal.name:<9} {signal.points:>4.2f} / {signal.max_points:<4.2f}  "
+            f"{song_value:>10} vs {target_value:<10}  {'hit' if signal.matched else 'miss'}"
+        )
+
+    matched = sum(1 for s in record.breakdown.signals if s.matched)
+    total = len(record.breakdown.signals)
+    print("  " + "-" * (WIDTH - 4))
+    print(f"  {'score':<9} {record.score:>4.2f} / {MAX_SCORE:<4.2f}  "
+          f"{matched} of {total} signals matched")
+
+    print()
+    print(f"  confidence : {record.confidence:.2f} ({record.band}){_band_gap(record)}")
+    print(f"               0.6 × score + 0.4 × coverage"
+          f"{', then blended with similarity' if _similarity_counted(record, embedder) else ''}")
+
+    if record.similarity is not None:
+        counted = _similarity_counted(record, embedder)
+        note = "folded into confidence" if counted else "recorded, NOT folded into confidence"
+        print(f"  similarity : {record.similarity:+.3f} — {note}")
+        if not counted:
+            print("               this embedder's scores are not calibrated enough to trust")
+    if record.chunk_id is not None:
+        print(f"  retrieved  : [{record.chunk_id}]")
+
+    print()
+    print("=" * WIDTH)
+
+
+def _format_signal_value(value) -> str:
+    """Formats a signal's song/target value at a fixed width for the why table."""
+    if isinstance(value, float):
+        return f"{value:.2f}"
+    return str(value)
+
+
+def _band_gap(record) -> str:
+    """Describes how far a confidence sits from the next band up, or '' at the top."""
+    for threshold, name in ((HIGH_THRESHOLD, BAND_HIGH), (MEDIUM_THRESHOLD, BAND_MEDIUM)):
+        if record.confidence < threshold:
+            return f" — {threshold - record.confidence:.2f} short of {name}"
+    return ""
+
+
+def _similarity_counted(record, embedder) -> bool:
+    """True when retrieval similarity actually moved this record's confidence."""
+    return (
+        record.similarity is not None
+        and embedder is not None
+        and getattr(embedder, "contributes_confidence", False)
+    )
 
 
 def _wrap(text: str, width: int) -> List[str]:

@@ -149,7 +149,7 @@ No need for numeric metrics unless you created some.
 
 Pop profile prefers higher energy songs. Lofi profile prefers lower energy songs.
 
-**Evaluation after adding retrieval and generation.** 232 automated tests across 11 files. The suite blocks network access and deletes the API key before every test, so a passing run is evidence that nothing was sent to Google and nothing was billed — and that a machine with a key produces the same results as one without.
+**Evaluation after adding retrieval and generation.** 252 automated tests across 12 files. The suite blocks network access and deletes the API key before every test, so a passing run is evidence that nothing was sent to Google and nothing was billed — and that a machine with a key produces the same results as one without.
 
 The measures that mattered most:
 

@@ -36,7 +36,7 @@ The system diagram lives at [diagrams/architecture.mmd](diagrams/architecture.mm
 - **Generation** ([src/answerer.py](src/answerer.py), [src/llm_client.py](src/llm_client.py)) — the retrieved passages, the query, and the already-chosen song list are assembled into a prompt and sent to `gemini-flash-lite-latest`. The prompt fences the list explicitly: *do not add, drop, or substitute*.
 - **Guardrails** ([src/guardrails.py](src/guardrails.py)) — now five layers. The original three (malformed rows skipped, invalid profiles rejected, template claims checked against the record) are unchanged. Two more guard model output: a sentence citing a passage that was not retrieved is dropped, and an answer naming a song the ranker did not select is withheld *in full*. A withheld answer falls back to the deterministic template explainer.
 - **Logging** ([src/logging_setup.py](src/logging_setup.py)) — every stage logs to `logs/run.log` (DEBUG) with warnings surfaced on the console. `--log-level INFO` shows the pipeline narrating itself.
-- **Evaluation** — 232 automated tests across eleven files, plus a per-run reliability report (average confidence, chunk similarity, citation density, fabricated citations, substituted songs, grounding rate). See [Testing Summary](#testing-summary) and [Reproducible Execution Evidence](#reproducible-execution-evidence).
+- **Evaluation** — 252 automated tests across twelve files, plus a per-run reliability report (average confidence, chunk similarity, citation density, fabricated citations, substituted songs, grounding rate). See [Testing Summary](#testing-summary) and [Reproducible Execution Evidence](#reproducible-execution-evidence).
 
 The class structure is in [diagrams/uml.mmd](diagrams/uml.mmd).
 
@@ -93,7 +93,7 @@ python3 -m src.main
 python3 -m pytest -q
 ```
 
-Expected: `232 passed`. Run it with the virtualenv's interpreter — `tests/test_embeddings.py` imports `google.genai`, so a bare system Python without the dependencies installed fails 8 of them for that reason alone. The suite never touches the network — see [What is and isn't deterministic now](#what-is-and-isnt-deterministic-now).
+Expected: `252 passed`. Run it with the virtualenv's interpreter — `tests/test_embeddings.py` imports `google.genai`, so a bare system Python without the dependencies installed fails 8 of them for that reason alone. The suite never touches the network — see [What is and isn't deterministic now](#what-is-and-isnt-deterministic-now).
 
 ### Running offline (no API key)
 
@@ -163,6 +163,45 @@ To add a permanent demo profile, add an entry to `PROFILES` in [src/main.py](src
 ```
 
 A test asserts that `extract_prefs()` recovers the `prefs` from the `query`, so the two cannot drift apart. Anything malformed is rejected by the profile guardrail with a message naming the offending field, rather than silently producing confident nonsense.
+
+### Interactive mode
+
+`src.main` answers one question per process, which means every follow-up pays the startup cost again — building the corpus, loading 277 vectors, and, when the committed index cannot be used, embedding every chunk from scratch. `src.repl` builds that stack once and then loops:
+
+```bash
+python3 -m src.repl
+```
+
+```
+ask> mellow lofi beats to study to, nothing too energetic
+  ... recommendations ...
+
+ask> why 1
+====================================================================
+  WHY #1: Staying There — L'Indécis
+  lofi · chill · energy 0.35 · 72 bpm
+====================================================================
+
+  signal    points        song value vs target
+  ----------------------------------------------------------------
+  genre     1.50 / 1.50        lofi vs lofi        hit
+  mood      0.50 / 0.50       chill vs chill       hit
+  energy    1.80 / 2.00        0.35 vs 0.25        hit
+  ----------------------------------------------------------------
+  score     3.80 / 4.00  3 of 3 signals matched
+
+  confidence : 0.97 (high)
+               0.6 × score + 0.4 × coverage
+  similarity : +0.015 — recorded, NOT folded into confidence
+               this embedder's scores are not calibrated enough to trust
+  retrieved  : [song:4]
+```
+
+`why <n>` computes nothing. Every recommendation is already scored through `evaluate_song()`, which records a `SignalMatch` per signal — hits *and* misses — and the normal output shows almost none of it. This is the rest of the record: per-signal points out of maximum, what the song actually held against what the profile wanted, how far the confidence sits from the next band, and the chunk the song was retrieved from. It also states plainly when retrieval similarity was recorded but *not* counted toward confidence, which is what happens on the offline path because `HashingEmbedder.contributes_confidence` is `False`.
+
+The session accepts the same backend and catalog flags as the one-shot CLI (`-k`, `--embedder`, `--generator`, `--catalog`, `--index`, `--context-k`, `--show-chunks`, `--log-level`), but not `--mode`, `--profile`, or `--query`. A malformed question ends that turn, not the session. `quit`, `exit`, Ctrl-D, and Ctrl-C all leave with exit code 0.
+
+One thing it deliberately does not offer is a command to change the log level mid-session: `configure_logging` is idempotent by design, so the level is fixed when the session starts and such a command would silently do nothing.
 
 ---
 
@@ -278,15 +317,15 @@ python3 -m pytest -q
 ```
 
 ```
-........................................................................ [ 31%]
-........................................................................ [ 62%]
-........................................................................ [ 93%]
-................                                                         [100%]
-232 passed in 14.11s
+........................................................................ [ 28%]
+........................................................................ [ 57%]
+........................................................................ [ 85%]
+....................................                                     [100%]
+252 passed in 21.55s
 [exit 0]
 ```
 
-232 tests across 11 files. The timing figure is the only part of this block that varies between runs.
+252 tests across 12 files. The timing figure is the only part of this block that varies between runs.
 
 A passing run also proves the suite is hermetic. `conftest.py` installs two autouse fixtures: one replaces `socket.connect`, `socket.connect_ex`, and `socket.create_connection` with a raiser, and one deletes `GEMINI_API_KEY` from the environment. So these tests cannot have reached the Gemini API, cannot have been billed, and produce identical results on a machine with a key and one without.
 
@@ -992,7 +1031,7 @@ The trade is a 2.3 MB generated file in git and a large diff whenever ingest re-
 
 ## Design Decisions
 
-**Content-based, not collaborative.** There is one user and no interaction history, so there is nothing to collaboratively filter. Content-based scoring is also fully inspectable which is a requirement for the explanation feature.
+**Content-based, not collaborative.** There is one user and no interaction history that survives a process, so there is nothing to collaboratively filter. `src.repl` keeps the last result set in memory so `why` can index into it, but nothing is written down and nothing carries across sessions. Content-based scoring is also fully inspectable, which is a requirement for the explanation feature — and it is what makes `why` a formatter over evidence rather than a second opinion about the pick.
 
 **Categorical vs. continuous fields are scored differently.** `genre` and `mood` can only match or miss, so they earn a flat bonus. `energy` lives on a 0–1 scale where "close" is meaningfully different from "far," so it earns partial credit via linear closeness: `1 - abs(song.energy - target_energy)`. Because energy is already normalized to 0–1, this needs no scaling and is guaranteed bounded, so it composes cleanly with the flat bonuses.
 
@@ -1015,7 +1054,7 @@ The trade is a 2.3 MB generated file in git and a large diff whenever ingest re-
 
 ## Testing Summary
 
-**The short version:** 232 of 232 automated tests pass. Across the seven demo profiles the system made 35 recommendations with an average confidence of **0.88**, flagging **0 of 35** as low-confidence. All **105 generated claims were grounded** in retrieved data (grounding rate 1.00, 0 explanations withheld). Fault injection confirmed the guardrails: a catalog with 3 corrupt rows loaded the 3 good ones and skipped the rest, and an artificially desynchronised record had its unsupported claim dropped rather than printed. The biggest problem is still the confidence layer: **15 of those 35 picks were genre-only matches that missed the requested mood, and not one was flagged** — and it takes a genre *and* a mood the catalog does not contain before the low band fires at all.
+**The short version:** 252 of 252 automated tests pass. Across the seven demo profiles the system made 35 recommendations with an average confidence of **0.88**, flagging **0 of 35** as low-confidence. All **105 generated claims were grounded** in retrieved data (grounding rate 1.00, 0 explanations withheld). Fault injection confirmed the guardrails: a catalog with 3 corrupt rows loaded the 3 good ones and skipped the rest, and an artificially desynchronised record had its unsupported claim dropped rather than printed. The biggest problem is still the confidence layer: **15 of those 35 picks were genre-only matches that missed the requested mood, and not one was flagged** — and it takes a genre *and* a mood the catalog does not contain before the low band fires at all.
 
 Every figure in this section is reproduced by a command in [Reproducible Execution Evidence](#reproducible-execution-evidence): the test count in [E1](#e1--test-suite), the 35/0.88/105/1.00 run figures in [E2](#e2--full-demo-run-all-seven-profiles) and [E5](#e5--reliability-sweep-across-all-seven-profiles), the band behaviour in [E6](#e6--uncovered-genre-polka), and the fault injections in [E7](#e7--guardrail-results).
 
@@ -1119,6 +1158,7 @@ Full analysis, including responsible-AI reflection and where bias enters: [model
 ```
 ├── src/
 │   ├── main.py            # CLI runner: argparse, demo profiles, run report
+│   ├── repl.py            # interactive session over a warm stack + the why command
 │   ├── ingest.py          # build-time CLI: the only writer of the vector index
 │   ├── config.py          # every tunable: model ids, dims, paths, chunk sizes, weights
 │   ├── corpus.py          # song-card rendering, KB assembly, corpus fingerprint
@@ -1155,7 +1195,8 @@ Full analysis, including responsible-AI reflection and where bias enters: [model
 │   ├── test_corpus.py         # card rendering, fingerprint invalidation
 │   ├── test_answerer.py       # prompt building and the grounding guardrail
 │   ├── test_ingest.py         # --check / --dry-run contracts
-│   └── test_main.py           # end-to-end CLI, both modes
+│   ├── test_main.py           # end-to-end CLI, both modes
+│   └── test_repl.py           # interactive session, the why command, warm stack
 ├── diagrams/
 │   ├── uml.mmd            # class diagram
 │   └── architecture.mmd   # system flow diagram
